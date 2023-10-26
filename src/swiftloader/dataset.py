@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image, ImageOps
 from PIL.Image import Image as PILImage
 from pathlib import Path
-from typing import Callable, List, Dict, Optional, Tuple, Literal, Any
+from typing import Callable, List, Dict, Optional, Tuple, Literal, Any, Sequence
 
 import torch
 from torch import Tensor
@@ -69,7 +69,7 @@ class SwiftDataset(Dataset):
                 files = os.scandir(image_annotations_path)
                 images_.extend([f"{dataset}/{scene.name}/{file.name}" for file in files if file.is_file()])
                 
-        if len(images_) < 100000:
+        if len(images_) < 1000000:
             images_.sort()
         else:
             logging.warning("Sorting images will take a long time. Skipping sorting. Images will be loaded in random order.")
@@ -138,7 +138,7 @@ class SwiftDataset(Dataset):
             area=area,
             orig_size=size,
             size=size,
-            box_format="XYXY",
+            box_format=torch.tensor(0),
         )
 
         return target
@@ -183,10 +183,10 @@ class SwiftDataset(Dataset):
                          (img_path={image_path},\n ann_path={ann_path},\n img_ann_path={img_ann_path},\n idx={idx})")
             return self.fail_save
 
-    def get_categories(self):
+    def get_categories(self) -> List:
         return list(self.cats.values())
     
-    def get_dataset_api(self, valid_categories: List[Dict] | None) -> COCO:
+    def get_dataset_api(self, valid_categories: List[Dict] | None = None) -> COCO:
         images, annotations, categories = [], [], []
         
         ann_id = 0

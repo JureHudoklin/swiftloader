@@ -2,6 +2,8 @@ from torch import Tensor
 from torchvision import tv_tensors
 from typing import List, Dict, TypedDict, Literal
 
+from torchvision.tv_tensors import BoundingBoxFormat
+
 class Target(TypedDict):
     image_id:  Tensor
     boxes: tv_tensors.BoundingBoxes | Tensor
@@ -10,7 +12,7 @@ class Target(TypedDict):
     area: Tensor
     orig_size: Tensor # H, W
     size: Tensor # H, W
-    box_format: Literal["XYXY", "XYWH", "CXCYWH"] # Default: XYXY
+    box_format: Tensor
 
 class CocoAnn(TypedDict):
     image_id: int

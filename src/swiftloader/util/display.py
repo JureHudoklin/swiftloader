@@ -10,10 +10,12 @@ from torch import Tensor
 from torchvision.transforms.v2.functional import to_image
 from torchvision.ops import box_convert, clip_boxes_to_image
 from torchvision.utils import draw_bounding_boxes
+from torchvision.tv_tensors import BoundingBoxFormat
 
 from typing import List, Callable, Union
 
 from .type_structs import Target
+from .target import target_box_format_to_enum, target_enum_to_box_format
 from .misc import NestedTensor
 
 def plot_switft_dataset(img: Union[torch.Tensor, PILImage], target: Target | None = None) -> Figure:
@@ -37,8 +39,8 @@ def plot_switft_dataset(img: Union[torch.Tensor, PILImage], target: Target | Non
         labels = target["labels"]
         labels = [f"cls: {label}" for i, label in enumerate(labels)]
         boxes = target["boxes"]
-        if target["box_format"] != "XYXY":
-            boxes = box_convert(boxes, in_fmt=target["box_format"], out_fmt="XYXY")
+        if target["box_format"] != BoundingBoxFormat.XYXY:
+            boxes = box_convert(boxes, in_fmt=target_box_format_to_enum(target["box_format"]).value, out_fmt="XYXY")
         boxes = clip_boxes_to_image(boxes, img.shape[-2:]) # type: ignore[call-overload]
         
         line_width = int(max(img.shape[-2:]) / 500)
@@ -110,7 +112,7 @@ def plot_switft_dataset_batch(samples: NestedTensor, targets: List[Target], widt
             labels_str = [f"{l}" for l in labels]
             boxes = targets[b]["boxes"]
             if targets[b]["box_format"] != "XYXY":
-                boxes = box_convert(boxes, in_fmt=targets[b]["box_format"], out_fmt="XYXY")
+                boxes = box_convert(boxes, in_fmt=target_box_format_to_enum(targets[b]["box_format"]).value, out_fmt="XYXY")
             if (boxes < 1).all():
                 boxes = boxes * torch.tensor([valid_w, valid_h, valid_w, valid_h]).to(boxes) # (N, 4)
             img = draw_bounding_boxes(img, boxes, labels=labels_str, colors="green", width=line_width, font_size=font_size, font="DejaVuSans")

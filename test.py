@@ -17,7 +17,8 @@ if __name__ == "__main__":
         T.Normalize(
             mean=[0.485, 0.456, 0.406], 
             std=[0.229, 0.224, 0.225]
-        )]
+        ),
+        ]
     )
     
     output_transforms = T.Compose([
@@ -30,13 +31,14 @@ if __name__ == "__main__":
     
     dataset = SwiftDataset(
         "/home/jure/datasets/OBJECTS_DATASET",
-        ["AHIL", "ICBIN"],
+        ["COCO_TRAIN"],
         input_transforms=input_transforms,
         base_transforms=base_transforms,
         keep_crowded=True,
     )
     
     img, target = dataset[-1]
+    print(target)
     img = output_transforms(img)
     img = img.to(torch.uint8)
     fig = plot_switft_dataset(img, target)
@@ -52,6 +54,7 @@ if __name__ == "__main__":
     )
     
     itr = iter(dataloader)
+    
     for i in range(len(dataloader)):
         batch = next(itr)
         fig = plot_switft_dataset_batch(batch.samples, batch.targets, images_format=output_transforms)
