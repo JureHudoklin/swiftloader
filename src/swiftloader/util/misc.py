@@ -1,3 +1,5 @@
+import os
+import sys
 import signal
 import logging
 import torch
@@ -14,25 +16,16 @@ def init_worker():
     
 def set_worker_sharing_strategy(worker_id: int) -> None:
     torch.multiprocessing.set_sharing_strategy("file_system")
-    
-class NestedTensorBatch:
-    def __init__(self,
-                 batch,
-                 size_constant: tuple[int, int] | None = None,
-                 size_devisable_by: int | None = None):
-        zipped_batch = list(zip(*batch))
-        self.samples = nested_tensor_from_tensor_list(zipped_batch[0],
-                                                      size_constant=size_constant,
-                                                      size_devisable_by=size_devisable_by)
-        self.targets = zipped_batch[1]
-        
-    def pin_memory(self):
-        self.samples = self.samples.pin_memory()
-        self.targets = self.targets
-        return self 
-    
-def create_nested_tensor_batch(x, **args) -> NestedTensorBatch:
-    return NestedTensorBatch(x, **args)
+
+
+class HiddenPrints:
+    def __enter__(self):
+        self._original_stdout = sys.stdout
+        sys.stdout = open(os.devnull, 'w')
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        sys.stdout.close()
+        sys.stdout = self._original_stdout
 
 class NestedTensor(object):
     def __init__(self, tensors: Tensor, mask: Optional[Tensor]):

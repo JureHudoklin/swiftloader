@@ -3,8 +3,8 @@ import torch
 from functools import partial
 
 import torchvision.transforms.v2 as T
-import json
-from swiftloader import SwiftObjectDetection
+
+from swiftloader import SwiftClassification
 from swiftloader.util.display import plot_switft_dataset
 
 if __name__ == "__main__":
@@ -28,26 +28,28 @@ if __name__ == "__main__":
         T.ToDtype(torch.uint8, scale=True),
     ])
     
-    dataset = SwiftObjectDetection(
-        "/home/jure/datasets/OBJECTS_DATASET",
-        [{"name": "COCO", "scenes": ["train_real"]}],
+    dataset = SwiftClassification(
+        "/media/jure/ssd/datasets/OBJECTS_DATASET",
+        [{"name": "SM_v03"}],
         input_transforms=input_transforms,
         base_transforms=base_transforms,
-        # attributes=["height", "OK", "zalitost"],
-        filter_by_property=None,
-        classless=False
+        attributes=["OK", "zalitost"]
     )
     
-    dataset_api = dataset.get_dataset_api()
+    mean, std = dataset.get_dataset_mean_std()
+    
+    print(mean, std)
     exit()
     
-    for i in range(0, 5):
+    
+    for i in range(5,15):
         img, target = dataset[i]
-        print(target)
+        # print(target)
         img = output_transforms(img)
         img = img.to(torch.uint8)
-        fig = plot_switft_dataset(img, target)
+        fig = plot_switft_dataset(img, None)
         plt.show()
+        plt.close(fig)
     
     # dataloader = get_swift_loader(
     #     dataset=dataset,

@@ -9,6 +9,7 @@ setup(
         'torch',
         'matplotlib',
         'pycocotools',
+        'ijson',
     ],
     author='Jure Hudoklin',
     description='A package for loading and processing data in "Swift" format',

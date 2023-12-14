@@ -1,18 +1,10 @@
 from torch import Tensor
 from torchvision import tv_tensors
-from typing import List, Dict, TypedDict, Literal
+from typing import List, Dict, TypedDict, Literal, TypeAlias
 
 from torchvision.tv_tensors import BoundingBoxFormat
 
-class Target(TypedDict):
-    image_id:  Tensor
-    boxes: tv_tensors.BoundingBoxes | Tensor
-    labels: Tensor
-    iscrowd: Tensor
-    area: Tensor
-    orig_size: Tensor # H, W
-    size: Tensor # H, W
-    box_format: Tensor
+DatasetInfo: TypeAlias = Dict[Literal["name", "scenes"], str]
 
 class CocoAnn(TypedDict):
     image_id: int

@@ -14,9 +14,8 @@ from torchvision.tv_tensors import BoundingBoxFormat
 
 from typing import List, Callable, Union
 
-from .type_structs import Target
-from .target import target_box_format_to_enum, target_enum_to_box_format
-from .misc import NestedTensor
+from target_utils import Target
+from target_utils.formating import target_box_format_to_enum, target_enum_to_box_format
 
 def plot_switft_dataset(img: Union[torch.Tensor, PILImage], target: Target | None = None) -> Figure:
     """Plot an image with bounding boxes and labels.
@@ -40,7 +39,9 @@ def plot_switft_dataset(img: Union[torch.Tensor, PILImage], target: Target | Non
         labels = [f"cls: {label}" for i, label in enumerate(labels)]
         boxes = target["boxes"]
         if target["box_format"] != BoundingBoxFormat.XYXY:
-            boxes = box_convert(boxes, in_fmt=target_box_format_to_enum(target["box_format"]).value, out_fmt="XYXY")
+            boxes = box_convert(boxes,
+                                in_fmt=target_box_format_to_enum(target["box_format"]).value.lower(),
+                                out_fmt="xyxy")
         boxes = clip_boxes_to_image(boxes, img.shape[-2:]) # type: ignore[call-overload]
         
         line_width = int(max(img.shape[-2:]) / 500)
@@ -53,7 +54,11 @@ def plot_switft_dataset(img: Union[torch.Tensor, PILImage], target: Target | Non
     
     return fig
 
-def plot_switft_dataset_batch(samples: NestedTensor, targets: List[Target], width_plots = 2, images_format: Callable | None = None) -> Figure:
+def plot_switft_dataset_batch(samples: Tensor,
+                              targets: List[Target],
+                              samples_unpaded_size: List[List[int]],
+                              width_plots = 2,
+                              samples_transform: Callable | None = None) -> Figure:
     """
     Plots a batch of images with their corresponding bounding boxes (if provided).
 
@@ -78,13 +83,10 @@ def plot_switft_dataset_batch(samples: NestedTensor, targets: List[Target], widt
     Figure
         A matplotlib Figure object containing the plotted images.
     """
-    tensors = samples.tensors
-    if images_format is not None:
-        tensors = images_format(tensors)
-    assert tensors.dtype == torch.uint8, "The images must be of type torch.uint8"
-    masks = samples.mask
-    assert masks is not None, "The NestedTensor must have a mask"
-    
+    if samples_transform is not None:
+        samples = samples_transform(samples)
+    assert samples.dtype == torch.uint8, "The images must be of type torch.uint8"
+
     bs = samples.shape[0]
     
     plot_grid_h = 1+bs//width_plots if width_plots//bs == 0 else width_plots//bs
@@ -99,22 +101,26 @@ def plot_switft_dataset_batch(samples: NestedTensor, targets: List[Target], widt
     
     for b in range(bs):
         idx_h, idx_w = b//width_plots, b%width_plots
-        img = tensors[b]
-        mask = masks[b]
-        valid_h = (~mask).sum(0)[0]
-        valid_w = (~mask).sum(1)[0]
+        img = samples[b]
         
-        line_width = int(max((valid_h, valid_w)) / 500) # type: ignore[operator]
-        font_size = int(max((valid_h, valid_w)) / 50) # type: ignore[operator]
+        if samples_unpaded_size is not None:
+            h, w = samples_unpaded_size[b]
+        else:
+            h, w = img.shape[-2:]
+        
+        line_width = int(max((h, w)) / 500) # type: ignore[operator]
+        font_size = int(max((h, w)) / 50) # type: ignore[operator]
         
         if targets is not None:
             labels = targets[b]["labels"]
             labels_str = [f"{l}" for l in labels]
             boxes = targets[b]["boxes"]
             if targets[b]["box_format"] != "XYXY":
-                boxes = box_convert(boxes, in_fmt=target_box_format_to_enum(targets[b]["box_format"]).value, out_fmt="XYXY")
+                boxes = box_convert(boxes,
+                                    in_fmt=target_box_format_to_enum(targets[b]["box_format"]).value.lower(),
+                                    out_fmt="xyxy")
             if (boxes < 1).all():
-                boxes = boxes * torch.tensor([valid_w, valid_h, valid_w, valid_h]).to(boxes) # (N, 4)
+                boxes = boxes * torch.tensor([w, h, w, h]).to(boxes) # (N, 4)
             img = draw_bounding_boxes(img, boxes, labels=labels_str, colors="green", width=line_width, font_size=font_size, font="DejaVuSans")
             
         grid[b].imshow(img.permute(1, 2, 0).cpu().numpy())
