@@ -1,5 +1,5 @@
 import os
-import time
+import random
 import logging
 import json
 import tempfile
@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image, ImageOps, ImageFile
 from PIL.Image import Image as PILImage
 from pathlib import Path
-from typing import Callable, List, Dict, Optional, Tuple, Literal, Any, Sequence, TypeAlias
+from typing import Callable, List, Dict, Optional, Tuple, Literal, Any, Iterable
 from collections import defaultdict
 
 import torch
@@ -25,21 +25,24 @@ from .util.type_structs import (
     CocoCat,
     DatasetInfo
 )
-from .util.misc import HiddenPrints
+from .util.misc import HiddenPrints, get_bbox_from_mask
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
-class SwiftObjectDetection(Dataset):
+class SwiftTemplateObjectDetection(Dataset):
     def __init__(
         self,
         data_root: str | Path,
         datasets_info: List[DatasetInfo],
+        num_templates: int = 3,
+        ignore_templates: bool = False,
         base_transforms: Optional[Callable] = None,
+        template_transforms: Optional[Callable] = None,
         input_transforms: Optional[Callable] = None,
+        input_template_transforms: Optional[Callable] = None,
         attributes: Optional[List[str]] = None,
-        filter_by_property: Optional[Dict[str, Any]] = None,
-        classless: bool = False,
+        filter_by_attribute: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Dataloader for COCO dataset
 
@@ -50,9 +53,10 @@ class SwiftObjectDetection(Dataset):
         ann_file : str
             Path to the annotation file
         """
-        self.classless = classless
         self.data_root = Path(data_root)
         self.datasets_info = sorted(datasets_info, key=lambda x: x["name"])
+        self.num_templates = num_templates
+        self.ignore_templates = ignore_templates
 
         self._check_datasets_exist(self.data_root, self.datasets_info)
         self.images_data = self._load_dataset(self.data_root, self.datasets_info)
@@ -60,17 +64,29 @@ class SwiftObjectDetection(Dataset):
             self.data_root, self.datasets_info
         )
         logging.info(f"Loaded {len(self.images_data)} images from {datasets_info} datasets")
+        
+        if not self.ignore_templates:
+            self._check_templates_exist(self.data_root, self.cats.values())
 
         self.base_transforms = base_transforms
         self.input_transforms = input_transforms
+        self.template_transforms = template_transforms
+        self.input_template_transforms = input_template_transforms
         self.attributes = attributes
-        self.filter_by_property = filter_by_property
+        self.filter_by_attribute = filter_by_attribute
 
         self.fail_save = self.__getitem__(0)
 
     def _check_datasets_exist(self, data_root: Path, datasets_info: List[DatasetInfo]):
         for dataset_info in datasets_info:
             assert (data_root / dataset_info["name"]).exists(), f"Dataset {dataset_info['name']} does not exist"
+
+    def _check_templates_exist(self, data_root: Path, categories: Iterable[CocoCat]):
+        for cat in categories:
+            template_path = data_root / "templates" / f"{cat['name']}" / "rgb"
+            template_images = list(template_path.glob("*.png")) + list(template_path.glob("*.jpg"))
+            if len(template_images) == 0:
+                raise FileNotFoundError(f"Template {template_path} does not exist")
 
     def _load_dataset(self, data_root: Path, datasets_info: List[DatasetInfo]) -> np.ndarray:
         images_ = []
@@ -119,17 +135,10 @@ class SwiftObjectDetection(Dataset):
 
         for dataset, categories in dataset_cats.items():
             for cat in categories:
-                if self.classless:
-                    cat_map[dataset][cat["id"]] = 1
-                    cat["id"] = 1
-                    cat["name"] = "object"
-                    cat["supercategory"] = "object"
-                    cats[1] = cat
-                else:
-                    new_cat_id += 1
-                    cat_map[dataset][cat["id"]] = new_cat_id
-                    cat["id"] = new_cat_id
-                    cats[new_cat_id] = cat
+                new_cat_id += 1
+                cat_map[dataset][cat["id"]] = new_cat_id
+                cat["id"] = new_cat_id
+                cats[new_cat_id] = cat
 
         return cat_map, cats
 
@@ -182,18 +191,70 @@ class SwiftObjectDetection(Dataset):
             attributes=attributes,
         )
         
-        if self.filter_by_property is not None:
-            for prop, value in self.filter_by_property.items():
+        if self.filter_by_attribute is not None:
+            for prop, value in self.filter_by_attribute.items():
                 target_prop = target["attributes"][prop] # type: ignore[index]
                 keep = target_prop == value
                 target = target_filter(target, keep)
 
         return target
 
+    def _get_template(self, cat_id: int, target: Target) -> Tuple[List[PILImage], Target]:
+        cat = self.cats[cat_id]
+        
+        # Add template attributes to target
+        labels = target["labels"]
+        sim_labels = torch.zeros_like(labels, dtype=torch.long)
+        sim_labels[labels == cat_id] = 1
+        
+        if target.get("attributes") is None:
+            target["attributes"] = {}
+            
+        target["attributes"]["sim_labels"] = sim_labels # type: ignore[index]
+        if self.ignore_templates:
+            target["attributes"]["sim_labels"][:] = 1
+            return None, target
+        
+        # Get all template image files for the category
+        template_root = self.data_root / "templates" / f"{cat['name']}"
+        template_path = self.data_root / "templates" / f"{cat['name']}" / "rgb"
+        mask_path = self.data_root / "templates" / f"{cat['name']}" / "mask"
+        
+        template_images_paths = list(template_path.glob("*.png")) + list(template_path.glob("*.jpg"))
+        template_images_paths = random.sample(template_images_paths, self.num_templates)
+        
+        template_masks_paths = list(mask_path.glob("*.png"))
+        
+        # Load templates
+        templates = []
+        for template_image_path in template_images_paths:
+            with Image.open(template_image_path) as template:
+                template = template.convert("RGB")
+            # Crop to template mask and apply it if available
+            image_name = template_image_path.name.split(".")[0]
+            template_mask_path = mask_path / f"{image_name}.png"
+            if template_mask_path.exists():
+                with Image.open(template_mask_path) as mask:
+                    mask = mask.convert("L")
+                template = Image.composite(template, Image.new("RGB", template.size, color=(120, 120, 120)), mask)
+                # Convert mask to numpy array
+                mask = torch.as_tensor(np.array(mask))
+                bbox = get_bbox_from_mask(mask)
+                # Crop template to mask
+                template = template.crop(bbox.tolist())
+                
+            if self.template_transforms is not None:
+                template = self.template_transforms(template)
+            if self.input_template_transforms is not None:
+                template = self.input_template_transforms(template)
+            templates.append(template)
+            
+        return templates, target
+
     def __len__(self):
         return len(self.images_data)
 
-    def __getitem__(self, idx: int) -> Tuple[Any, Target]:
+    def __getitem__(self, idx: int) -> Tuple[Any, Any, Target]:
         ann_path, img_ann_path, image_data = self._get_data_paths(idx)
 
         # Load image and annotations
@@ -220,6 +281,15 @@ class SwiftObjectDetection(Dataset):
         for i, label in enumerate(target["labels"]):
             new_labels[i] = self.cat_map[image_data["dataset"]][label.item()]  # type: ignore[index]
         target["labels"] = new_labels
+        
+        # Load templates
+        if len(target["labels"]) == 0:
+            cat_id = random.choice(list(self.cats.keys()))
+        else:
+            cat_id = random.choice(target["labels"]).item()
+        templates, target = self._get_template(cat_id, target) # type: ignore[assignment]
+        if templates is not None:
+            templates = torch.stack(templates)
 
         if self.base_transforms is not None:
             image, target = self.base_transforms(image, target)
@@ -228,7 +298,7 @@ class SwiftObjectDetection(Dataset):
             image, target = self.input_transforms(image, target)
 
         target_set_dtype(target)
-        return image, target
+        return image, templates, target
 
     def get_categories(self) -> List:
         return list(self.cats.values())
@@ -278,22 +348,3 @@ class SwiftObjectDetection(Dataset):
         return coco, dataset
 
 
-# if __name__ == "__main__":
-
-#     base_transforms = T.Resize((512, 512))
-
-#     dataloader = DatasetLoader(
-#         "/home/jure/datasets/OBJECTS_DATASET",
-#         ["AHIL", "ICBIN"],
-#         "val",
-#         input_transforms=None,
-#         base_transforms=base_transforms,
-#         keep_crowded=True,
-#     )
-#     dataloader.get_dataset_api(None)
-
-# img, target = dataloader[0]
-
-# plt.imshow(img)
-# plt.savefig("test.png")
-# print(target)

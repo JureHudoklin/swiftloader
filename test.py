@@ -1,3 +1,5 @@
+# Set matplotlib backend 
+# This has to be done before importing pyplot
 import matplotlib.pyplot as plt
 import torch
 from functools import partial
@@ -5,11 +7,13 @@ from functools import partial
 import torchvision.transforms.v2 as T
 import json
 from swiftloader import SwiftObjectDetection
+from swiftloader import SwiftTemplateObjectDetection
 from swiftloader.util.display import plot_switft_dataset
 
 if __name__ == "__main__":
     
     base_transforms = T.Resize((512, 512))
+    template_transforms = T.Resize((512, 512))
     input_transforms = T.Compose([
         T.ToImage(),
         T.ToDtype(torch.float32, scale=True),
@@ -28,22 +32,24 @@ if __name__ == "__main__":
         T.ToDtype(torch.uint8, scale=True),
     ])
     
-    dataset = SwiftObjectDetection(
-        "/home/jure/datasets/OBJECTS_DATASET",
-        [{"name": "COCO", "scenes": ["train_real"]}],
+    dataset = SwiftTemplateObjectDetection(
+        "/media/jure/ssd/datasets/OBJECTS_DATASET",
+        [{"name": "COCO"}],
+        ignore_templates=False,
         input_transforms=input_transforms,
         base_transforms=base_transforms,
-        # attributes=["height", "OK", "zalitost"],
-        filter_by_property=None,
-        classless=False
+        template_transforms=template_transforms,
+        input_template_transforms=input_transforms,
     )
-    
-    dataset_api = dataset.get_dataset_api()
-    exit()
+
     
     for i in range(0, 5):
-        img, target = dataset[i]
-        print(target)
+        img, template, target = dataset[i]
+        print(template)
+        # for temp in template:
+        #     fig = plot_switft_dataset(temp, None)
+        #     plt.show()
+
         img = output_transforms(img)
         img = img.to(torch.uint8)
         fig = plot_switft_dataset(img, target)
