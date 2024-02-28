@@ -33,8 +33,8 @@ if __name__ == "__main__":
     ])
     
     dataset = SwiftTemplateObjectDetection(
-        "/media/jure/ssd/datasets/OBJECTS_DATASET",
-        [{"name": "COCO"}],
+        "/media/jure/ssd/datasets/MegaPose",
+        [{"name": "extracted"}],
         ignore_templates=False,
         input_transforms=input_transforms,
         base_transforms=base_transforms,

@@ -229,9 +229,11 @@ class SwiftClassification(Dataset):
         target = target_filter(target, keep)
             
         # Crop image to bounding box
-        box_noise = torch.randint(-30, 30, (4,)).reshape(1, 4).float()
+        box_noise = torch.randint(-10, 30, (4,)).reshape(1, 4).float()
+        #box_noise[0, :2] = box_noise[0, :2] * (-1)
         box = target["boxes"]
         box = box + box_noise
+        # box = box + box_noise
         box = clip_boxes_to_image(box, size)
         box_xywh = box_convert(box, in_fmt="xyxy", out_fmt="xywh")[0].tolist()
         bw, bh = box_xywh[2], box_xywh[3]
@@ -239,7 +241,7 @@ class SwiftClassification(Dataset):
             image = image.crop((box_xywh[0], box_xywh[1], box_xywh[0] + bw, box_xywh[1] + bh))
         target["orig_size"] = torch.tensor([bh, bw])
         target["size"] = torch.tensor([bh, bw])
-        target["boxes"] = target["boxes"] - torch.tensor([0,0,bh, bw]) # type: ignore[index]
+        target["boxes"] = target["boxes"] - torch.tensor([0, 0, bh, bw]) # type: ignore[index]
 
         return target_reset_tvtensor(target), image
 
