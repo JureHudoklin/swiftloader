@@ -10,6 +10,8 @@ setup(
         'matplotlib',
         'pycocotools',
         'ijson',
+        'fastparquet',
+        'pandas',
     ],
     author='Jure Hudoklin',
     description='A package for loading and processing data in "Swift" format',
