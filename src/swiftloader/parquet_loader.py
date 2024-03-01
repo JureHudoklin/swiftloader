@@ -12,6 +12,10 @@ from pathlib import Path
 from torch.utils.data import IterableDataset, get_worker_info
 
 import fastparquet as fp
+import pyarrow.parquet as pq
+import pyarrow as pa
+import pandas as pd
+
 
 logger = logging.getLogger(__name__)
 
@@ -117,3 +121,35 @@ class ParquetDataloader(IterableDataset):
             entry['image'] = Image.open(io.BytesIO(entry['image']))
             
         return data
+
+
+class DataToParquet():
+    def __init__(self,
+                 save_dir,
+                 dataset_name,
+                 schema) -> None:
+        self.save_dir = Path(save_dir)
+        self.dataset_name = dataset_name
+        self.schema = schema
+        self.num_entries = 10000
+        
+        self.data = []
+        
+    def add_entry(self, data_dict):
+        self.data.append(data_dict)
+        
+        if len(self.data) >= 10000:
+            self.save_data()
+            
+    def save_data(self):
+        # Convert the data to a pandas dataframe
+        df = pd.DataFrame(self.data[:10000])
+        _ = pa.Table.from_pandas(df)        
+        
+        # Save the dataframe to parquet
+        pq.write_to_dataset(table=pa.Table.from_pandas(df),
+                            root_path=str(self.save_dir / self.dataset_name),
+                            schema=self.schema,
+        )
+        
+        self.data = self.data[10000:]
