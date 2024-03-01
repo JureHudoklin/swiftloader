@@ -37,7 +37,6 @@ class ParquetDataloader(IterableDataset):
                  format_data: Callable[[List[dict]], Any] | None = None,
                  drop_last: bool = False,
                  shuffle: bool = True,
-                 return_labels: bool = True,
                  *args,
                  **kwargs
                  ) -> None:
@@ -51,14 +50,16 @@ class ParquetDataloader(IterableDataset):
         if format_data is None:
             format_data = self._format_data
         self.format_data = format_data
-        self.return_labels = return_labels
 
         self.dataset = self._load_dataset(self.root_dir, self.scene)
 
     def _load_dataset(self, root_dir, scene: str):  
         path = str(root_dir / scene)
+        if not Path(path).exists():
+            raise FileNotFoundError(f"Directory {path} does not exist.")
         dataset = fp.ParquetFile(path)
         return dataset
+    
     def __len__(self):
         return self.dataset.count() // self.batch_size
     
@@ -107,7 +108,8 @@ class ParquetDataloader(IterableDataset):
             # Convert to list of dictionaries
             batch = batch.to_dict(orient='records')
             cache.extend(batch)
-            random.shuffle(cache)
+            if self.shuffle:
+                random.shuffle(cache)
             i += 1
             
     def _format_data(self, data: List[dict]) -> List[dict]:
