@@ -1,6 +1,5 @@
-from .object_detection import SwiftObjectDetection
-from .classification import SwiftClassification
-from .template_based_detection import SwiftTemplateObjectDetection
+from .folder_dataset import FolderDataset
+from .parquet_dataset import ParquetDataset
 
 from importlib.metadata import version
 

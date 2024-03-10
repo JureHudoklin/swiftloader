@@ -16,6 +16,7 @@ import pyarrow.parquet as pq
 import pyarrow as pa
 import pandas as pd
 
+from .util.type_structs import DatasetInfo
 
 logger = logging.getLogger(__name__)
 
@@ -33,10 +34,10 @@ class WorkerInfo:
     num_workers: int
 
 
-class ParquetDataloader(IterableDataset):
+class ParquetDataset(IterableDataset):
     def __init__(self,
                  root_dir: str | Path,
-                 scene: str,
+                 datasets_info: List[DatasetInfo],
                  batch_size: int,
                  format_data: Callable[[List[dict]], Any] | None = None,
                  drop_last: bool = False,
@@ -44,21 +45,25 @@ class ParquetDataloader(IterableDataset):
                  *args,
                  **kwargs
                  ) -> None:
-        super(ParquetDataloader, self).__init__(*args, **kwargs)
+        super(ParquetDataset, self).__init__(*args, **kwargs)
         
         self.root_dir = root_dir if isinstance(root_dir, Path) else Path(root_dir)
+        self.datasets_info = datasets_info
+        if len(self.datasets_info) > 1:
+            raise ValueError("For parquet dataset it is only possible to load one dataset at a time.")
+        if len(self.datasets_info[0]["scenes"]) > 1:
+            raise ValueError("For parquet dataset it is only possible to load one scene at a time.")
         self.batch_size = batch_size
-        self.scene = scene
         self.drop_last = drop_last
         self.shuffle = shuffle
         if format_data is None:
             format_data = self._format_data
         self.format_data = format_data
 
-        self.dataset = self._load_dataset(self.root_dir, self.scene)
+        self.dataset = self._load_dataset(self.root_dir, self.datasets_info[0])
 
-    def _load_dataset(self, root_dir, scene: str):  
-        path = str(root_dir / scene)
+    def _load_dataset(self, root_dir, datasets_info: DatasetInfo):  
+        path = str(root_dir / datasets_info["name"]  / datasets_info["scenes"][0])
         if not Path(path).exists():
             raise FileNotFoundError(f"Directory {path} does not exist.")
         dataset = fp.ParquetFile(path)
@@ -125,25 +130,27 @@ class ParquetDataloader(IterableDataset):
 
 class DataToParquet():
     def __init__(self,
-                 save_dir,
-                 dataset_name,
-                 schema) -> None:
+                 save_dir: str | Path,
+                 dataset_name: str,
+                 schema: pa.Schema,
+                 entry_per_file: int = 10000,
+                 ) -> None:
         self.save_dir = Path(save_dir)
         self.dataset_name = dataset_name
         self.schema = schema
-        self.num_entries = 10000
+        self.entry_per_file = entry_per_file
         
         self.data = []
         
     def add_entry(self, data_dict):
         self.data.append(data_dict)
         
-        if len(self.data) >= 10000:
+        if len(self.data) >= self.entry_per_file :
             self.save_data()
             
     def save_data(self):
         # Convert the data to a pandas dataframe
-        df = pd.DataFrame(self.data[:10000])
+        df = pd.DataFrame(self.data[:self.entry_per_file ])
         _ = pa.Table.from_pandas(df)        
         
         # Save the dataframe to parquet
@@ -152,4 +159,4 @@ class DataToParquet():
                             schema=self.schema,
         )
         
-        self.data = self.data[10000:]
+        self.data = self.data[self.entry_per_file :]
