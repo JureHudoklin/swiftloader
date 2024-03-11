@@ -3,17 +3,17 @@
 import matplotlib.pyplot as plt
 import torch
 from functools import partial
+from tqdm import tqdm
 
 import torchvision.transforms.v2 as T
+from torch.utils.data import DataLoader
 import json
-from swiftloader import SwiftObjectDetection
-from swiftloader import SwiftTemplateObjectDetection
+from swiftloader.object_detection import ObjectDetectionDatasetParquet, ParquetDataset
 from swiftloader.util.display import plot_switft_dataset
 
 if __name__ == "__main__":
     
     base_transforms = T.Resize((512, 512))
-    template_transforms = T.Resize((512, 512))
     input_transforms = T.Compose([
         T.ToImage(),
         T.ToDtype(torch.float32, scale=True),
@@ -32,28 +32,38 @@ if __name__ == "__main__":
         T.ToDtype(torch.uint8, scale=True),
     ])
     
-    dataset = SwiftTemplateObjectDetection(
-        "/media/jure/ssd/datasets/MegaPose",
-        [{"name": "extracted"}],
-        ignore_templates=False,
-        input_transforms=input_transforms,
-        base_transforms=base_transforms,
-        template_transforms=template_transforms,
-        input_template_transforms=input_transforms,
+    dataset = ObjectDetectionDatasetParquet(
+        root_dir = "/media/jure/ssd/datasets/parquet_datasets",
+        datasets_info=[{"name": "objects365", "scenes": ["train"]}],
+        batch_size=16,
+        input_transform=input_transforms,
+        base_transform=base_transforms,
+        classless=True
     )
-
+    # dataset = ParquetDataset(
+    #     root_dir = "/media/jure/ssd/datasets/parquet_datasets",
+    #     datasets_info=[{"name": "objects365", "scenes": ["val"]}],
+    #     batch_size=16,
+    #     input_transform=input_transforms,
+    #     base_transform=base_transforms,
+    # )
     
-    for i in range(0, 5):
-        img, template, target = dataset[i]
-        print(template)
-        # for temp in template:
-        #     fig = plot_switft_dataset(temp, None)
-        #     plt.show()
-
-        img = output_transforms(img)
-        img = img.to(torch.uint8)
-        fig = plot_switft_dataset(img, target)
+    dataloader = DataLoader(
+        dataset,
+        batch_size=None,
+        num_workers=8,
+        pin_memory=True,
+    )
+    
+    it = iter(dataloader)
+    tqdm_it = tqdm(it, total=len(dataloader))
+    for data in tqdm_it:
+        images, targets = data
+        img = output_transforms(images[0])
+        
+        fig = plot_switft_dataset(img, targets[0])
         plt.show()
+        plt.close(fig)
     
     # dataloader = get_swift_loader(
     #     dataset=dataset,

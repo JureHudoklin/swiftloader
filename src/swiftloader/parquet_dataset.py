@@ -45,7 +45,7 @@ class ParquetDataset(IterableDataset):
                  *args,
                  **kwargs
                  ) -> None:
-        super(ParquetDataset, self).__init__(*args, **kwargs)
+        # super().__init__()
         
         self.root_dir = root_dir if isinstance(root_dir, Path) else Path(root_dir)
         self.datasets_info = datasets_info

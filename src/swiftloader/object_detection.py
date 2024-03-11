@@ -10,6 +10,7 @@ from PIL.Image import Image as PILImage
 import torch
 from torchvision import tv_tensors
 from torchvision.ops import box_convert
+from torchvision.transforms.v2 import functional as TF
 from pycocotools.coco import COCO
 from target_utils import Target
 from target_utils.util import target_filter
@@ -71,7 +72,7 @@ class ObjectDetectionBase:
         image_id = image_ann["image_id"]
         annotations = image_ann["annotations"]
         
-        w, h = image.size
+        w, h = image_ann["width"], image_ann["height"]
         size = torch.tensor([int(h), int(w)])
         image_id = torch.tensor(image_id)
 
@@ -236,18 +237,26 @@ class ObjectDetectionDatasetParquet(ParquetDataset, ObjectDetectionBase):
         targets = []
         images = []
         for d in data:
-            d["image"] = Image.open(io.BytesIO(d["image"]))
-            d["annotations"] = json.loads(d["annotations"])
-            target = super()._get_target(d)
-
-            image = d["image"]
-            if self.base_transform is not None:
-                image, target = self.base_transform(image, target)
-            if self.input_transform is not None:
-                image, target = self.input_transform(image, target)
+            with Image.open(io.BytesIO(d["image"])) as img:
+                temp = {}
+                temp["image"] = img
+                temp["annotations"] = json.loads(d["annotations"])
+                target = super()._get_target(temp)
+                target_set_dtype(target)
                 
-            target_set_dtype(target)
+                # Remap category ids
+                new_labels = torch.zeros_like(target["labels"])
+                for i, label in enumerate(target["labels"]):
+                    new_labels[i] = self.cat_map[self.datasets_info[0]["name"]][label.item()]  # type: ignore[index]
+                target["labels"] = new_labels
+                
+                if self.base_transform is not None:
+                    img, target = self.base_transform(img, target)
+                if self.input_transform is not None:
+                    img, target = self.input_transform(img, target)
+           
             targets.append(target)
-            images.append(image)
-            
+            images.append(img)
+                        
+        del data
         return images, targets
