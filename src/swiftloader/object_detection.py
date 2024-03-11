@@ -1,6 +1,7 @@
 from typing import Dict, List, Tuple, Callable, Any, Literal
 from pathlib import Path
 import json
+import io
 import tempfile
 from collections import defaultdict
 from PIL import Image, ImageOps, ImageFile
@@ -17,7 +18,7 @@ from target_utils.formating import target_set_dtype
 from .folder_dataset import FolderDataset
 from .parquet_dataset import ParquetDataset 
 from .util.type_structs import DatasetInfo, CocoCat
-from .util.misc import HiddenPrints
+from .util.misc import HiddenPrints, loader
 
 
 class ObjectDetectionBase:
@@ -101,6 +102,8 @@ class ObjectDetectionDatasetFolder(FolderDataset, ObjectDetectionBase):
                 root_dir: str | Path,
                 datasets_info: List[DatasetInfo],
                 format_data: Callable[[dict], Any] | None = None,
+                base_transform: Callable | None = None,
+                input_transform: Callable | None = None,
                 data_folders: List[Dict[Literal["name", "ext"], str]] = [{"name": "images", "ext": "jpg"}],
                 annotations_folders: List[str] = ["annotations"],
                 data_loader: Callable[[str, Path], Any] = loader,
@@ -120,37 +123,60 @@ class ObjectDetectionDatasetFolder(FolderDataset, ObjectDetectionBase):
             root_dir=root_dir,
             datasets_info=datasets_info,
             classless=classless,
-        )        
-    
-    def __len__(self) -> int:
-        return len(self.data)
+        )
+        self.base_transform = base_transform
+        self.input_transform = input_transform
     
     def __getitem__(self, idx: int):
         data = super().__getitem__(idx)
         target = self._get_target(data)
+        image = data["images"]
+        
+        # Remap category ids
+        new_labels = torch.zeros_like(target["labels"])
+        for i, label in enumerate(target["labels"]):
+            new_labels[i] = self.cat_map[image_data["dataset"]][label.item()]  # type: ignore[index]
+        target["labels"] = new_labels
+        
+        if self.base_transform is not None:
+            image, target = self.base_transform(image, target)
+        if self.input_transform is not None:
+            image, target = self.input_transform(image, target)
+            
+        target_set_dtype(target)
+        return image, target
 
-
-
-    def get_dataset_api(self, valid_categories: List[Dict] | None = None) -> Tuple[COCO, Dict]:
+    def get_dataset_api(self, valid_categories: List[Dict] | None = None,
+                        annotations_folder_name = "annotations") -> Tuple[COCO, Dict]:
         images, annotations, categories = [], [], []
 
         ann_id = 0
         for idx in range(len(self)):
-            ann_path, img_ann_path, image_data = self._get_data_paths(idx)
-
-            with open(img_ann_path) as f:
-                img_ann = json.load(f)
-                img_ann["id"] = idx
-                images.append(img_ann)
+            paths, data_info = self._get_data_paths(idx)
+            ann_path = None
+            for p in paths:
+                if p.name == annotations_folder_name:
+                    ann_path = p
+                    break
+            else:
+                raise FileNotFoundError(f"Annotations folder not found in {paths}")
 
             with open(ann_path) as f:
                 ann = json.load(f)
-                for obj in ann:
-                    obj["image_id"] = idx
-                    obj["id"] = ann_id
-                    obj["category_id"] = self.cat_map[image_data["dataset"]][obj["category_id"]]  # type: ignore[index]
-                    ann_id += 1
-                    annotations.append(obj)
+            
+            img_ann = {
+                "file_name": data_info["image_name"],
+                "height": ann["height"],
+                "width": ann["width"],
+                "id": ann["image_id"],
+            }
+            images.append(img_ann)
+            for obj in ann["annotations"]:
+                obj["image_id"] =ann["image_id"],
+                obj["id"] = ann_id
+                obj["category_id"] = self.cat_map[data_info["dataset"]][obj["category_id"]]
+                ann_id += 1
+                annotations.append(obj)
 
         categories = self.get_categories()
         if valid_categories is not None:
@@ -158,7 +184,7 @@ class ObjectDetectionDatasetFolder(FolderDataset, ObjectDetectionBase):
 
         info = {
             "description": f"Datasets: {self.datasets_info}",
-            "data_root": str(self.data_root),
+            "data_root": str(self.root_dir),
         }
 
         dataset = {
@@ -174,3 +200,54 @@ class ObjectDetectionDatasetFolder(FolderDataset, ObjectDetectionBase):
                 coco = COCO(f.name)
 
         return coco, dataset
+    
+    
+class ObjectDetectionDatasetParquet(ParquetDataset, ObjectDetectionBase):
+    def __init__(self,
+                root_dir: str | Path,
+                datasets_info: List[DatasetInfo],
+                batch_size: int,
+                format_data: Callable[[List[dict]], Any] | None = None,
+                drop_last: bool = False,
+                shuffle: bool = True,
+                base_transform: Callable | None = None,
+                input_transform: Callable | None = None,
+                classless: bool = False,
+    ):
+        ParquetDataset.__init__(
+            self,
+            root_dir=root_dir,
+            datasets_info=datasets_info,
+            batch_size=batch_size,
+            format_data=format_data,
+            drop_last=drop_last,
+            shuffle=shuffle,
+        )
+        ObjectDetectionBase.__init__(
+            self,
+            root_dir=root_dir,
+            datasets_info=datasets_info,
+            classless=classless,
+        )
+        self.base_transform = base_transform
+        self.input_transform = input_transform
+    
+    def _format_data(self, data: List[Dict]):
+        targets = []
+        images = []
+        for d in data:
+            d["image"] = Image.open(io.BytesIO(d["image"]))
+            d["annotations"] = json.loads(d["annotations"])
+            target = super()._get_target(d)
+
+            image = d["image"]
+            if self.base_transform is not None:
+                image, target = self.base_transform(image, target)
+            if self.input_transform is not None:
+                image, target = self.input_transform(image, target)
+                
+            target_set_dtype(target)
+            targets.append(target)
+            images.append(image)
+            
+        return images, targets
