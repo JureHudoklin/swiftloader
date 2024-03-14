@@ -44,9 +44,7 @@ class ParquetDataset(IterableDataset):
                  shuffle: bool = True,
                  *args,
                  **kwargs
-                 ) -> None:
-        # super().__init__()
-        
+                 ) -> None:        
         self.root_dir = root_dir if isinstance(root_dir, Path) else Path(root_dir)
         self.datasets_info = datasets_info
         if len(self.datasets_info) > 1:

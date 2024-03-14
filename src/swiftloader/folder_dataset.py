@@ -63,7 +63,6 @@ class FolderDataset(Dataset):
         format_data : Callable[[List[dict]], Any] | None, optional
             A function that takes as an input a dictionary of data and returns a formatted version of the data. If None, the default
         """
-        super(FolderDataset, self).__init__(*args, **kwargs)
         self.root_dir = Path(root_dir)
         self.datasets_info = sorted(datasets_info, key=lambda x: x["name"])
         self.format_data = format_data

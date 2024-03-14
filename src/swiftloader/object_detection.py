@@ -1,4 +1,4 @@
-from typing import Dict, List, Tuple, Callable, Any, Literal
+from typing import Dict, List, Tuple, Callable, Any, Literal, Generator
 from pathlib import Path
 import json
 import io
@@ -8,6 +8,7 @@ from PIL import Image, ImageOps, ImageFile
 from PIL.Image import Image as PILImage
 
 import torch
+from torch import Tensor
 from torchvision import tv_tensors
 from torchvision.ops import box_convert
 from torchvision.transforms.v2 import functional as TF
@@ -232,8 +233,13 @@ class ObjectDetectionDatasetParquet(ParquetDataset, ObjectDetectionBase):
         )
         self.base_transform = base_transform
         self.input_transform = input_transform
+        
+    def __iter__(self) -> Generator[Tuple[List, List], None, None]:
+        for data in super().__iter__():
+            images, targets = self.data_to_target(data)
+            yield images, targets
     
-    def _format_data(self, data: List[Dict]):
+    def data_to_target(self, data: List[Dict]):
         targets = []
         images = []
         for d in data:
@@ -260,3 +266,48 @@ class ObjectDetectionDatasetParquet(ParquetDataset, ObjectDetectionBase):
                         
         del data
         return images, targets
+    
+    def get_dataset_api(self, valid_categories: List[Dict] | None = None) -> Tuple[COCO, Dict]:
+        images, annotations, categories = [], [], []
+
+        ann_id = 0
+        for data in super().__iter__():
+            for d in data:
+                ann = json.loads(d["annotations"])
+            
+                img_ann = {
+                    "file_name": ann["file_name"],
+                    "height": ann["height"],
+                    "width": ann["width"],
+                    "id": ann["image_id"],
+                }
+                images.append(img_ann)
+                for obj in ann["annotations"]:
+                    obj["image_id"] = ann["image_id"],
+                    obj["id"] = ann_id
+                    obj["category_id"] = self.cat_map[self.datasets_info[0]["name"]][obj["category_id"]]
+                    ann_id += 1
+                    annotations.append(obj)
+
+        categories = self.get_categories()
+        if valid_categories is not None:
+            categories = valid_categories
+
+        info = {
+            "description": f"Datasets: {self.datasets_info}",
+            "data_root": str(self.root_dir),
+        }
+
+        dataset = {
+            "info": info,
+            "images": images,
+            "annotations": annotations,
+            "categories": categories,
+        }
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json") as f:
+            with HiddenPrints():
+                json.dump(dataset, f)
+                f.flush()
+                coco = COCO(f.name)
+
+        return coco, dataset
