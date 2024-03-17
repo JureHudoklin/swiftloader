@@ -95,9 +95,9 @@ class FolderDataset(Dataset):
                 scenes = [scene for scene in scenes if scene.name in dataset_info["scenes"]]
             
             for scene in scenes:
-                data_path = scene / "data"
+                data_path = scene / self.data_folders[0]["name"]
                 
-                files = os.scandir(data_path / self.data_folders[0]["name"])
+                files = os.scandir(data_path)
                 data_.extend(
                     [
                         f"{dataset_info['name']}/{scene.name}/{file.name}"

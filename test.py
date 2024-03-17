@@ -32,13 +32,27 @@ if __name__ == "__main__":
         T.ToDtype(torch.uint8, scale=True),
     ])
     
+    def format_data(d):
+        for data in d:
+            data["annotations"] = json.loads(data["annotations"])
+            for ann in data["annotations"]["annotations"]:
+                if ann["stability_score"] < 0.9:
+                    # Remove unstable annotations
+                    data["annotations"]["annotations"].remove(ann)
+            
+            data["annotations"] = json.dumps(data["annotations"])
+        return d
+        
+            
+    
     dataset = ObjectDetectionDatasetParquet(
         root_dir = "/media/jure/ssd/datasets/parquet_datasets",
-        datasets_info=[{"name": "objects365", "scenes": ["train"]}],
-        batch_size=16,
+        datasets_info=[{"name": "industrial_objects", "scenes": ["train"]}],
+        batch_size=2,
         input_transform=input_transforms,
         base_transform=base_transforms,
-        classless=True
+        classless=True,
+        #format_data=format_data,
     )
     # dataset = ParquetDataset(
     #     root_dir = "/media/jure/ssd/datasets/parquet_datasets",
