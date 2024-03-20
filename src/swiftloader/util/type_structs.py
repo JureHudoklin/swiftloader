@@ -4,7 +4,9 @@ from typing import List, Dict, TypedDict, Literal, TypeAlias
 
 from torchvision.tv_tensors import BoundingBoxFormat
 
-DatasetInfo: TypeAlias = Dict[Literal["name", "scenes"], str]
+class DatasetInfo(TypedDict):
+    name: str
+    scenes: List[str]
 
 class CocoAnn(TypedDict):
     image_id: int

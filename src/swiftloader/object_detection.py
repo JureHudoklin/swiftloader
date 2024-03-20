@@ -257,7 +257,6 @@ class ObjectDetectionDatasetParquet(ParquetDataset, ObjectDetectionBase):
                 
                 if self.base_transform is not None:
                     img, target = self.base_transform(img, target)
-                    img = torch.from_numpy(np.array(img)).permute(2, 0, 1)
                 if self.input_transform is not None:
                     img, target = self.input_transform(img, target)
            

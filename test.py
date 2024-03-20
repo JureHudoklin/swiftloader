@@ -47,7 +47,7 @@ if __name__ == "__main__":
     
     dataset = ObjectDetectionDatasetParquet(
         root_dir = "/media/jure/ssd/datasets/parquet_datasets",
-        datasets_info=[{"name": "industrial_objects", "scenes": ["train"]}],
+        datasets_info=[{"name": "industrial_objects", "scenes": ["train"]}, {"name": "objects365", "scenes": ["val"]}],
         batch_size=2,
         input_transform=input_transforms,
         base_transform=base_transforms,
@@ -56,28 +56,25 @@ if __name__ == "__main__":
     )
     # dataset = ParquetDataset(
     #     root_dir = "/media/jure/ssd/datasets/parquet_datasets",
-    #     datasets_info=[{"name": "objects365", "scenes": ["val"]}],
-    #     batch_size=16,
-    #     input_transform=input_transforms,
-    #     base_transform=base_transforms,
+    #     datasets_info=[{"name": "industrial_objects", "scenes": ["train"]}],
+    #     batch_size=2,
     # )
-    
+    print(len(dataset))
+   
     dataloader = DataLoader(
         dataset,
         batch_size=None,
-        num_workers=8,
-        pin_memory=True,
+        num_workers=2,
     )
     
-    it = iter(dataloader)
-    tqdm_it = tqdm(it, total=len(dataloader))
-    for data in tqdm_it:
+    for data in tqdm(dataloader):
+
         images, targets = data
         img = output_transforms(images[0])
         
-        fig = plot_switft_dataset(img, targets[0])
-        plt.show()
-        plt.close(fig)
+        # fig = plot_switft_dataset(img, targets[0])
+        # plt.show()
+        # plt.close(fig)
     
     # dataloader = get_swift_loader(
     #     dataset=dataset,

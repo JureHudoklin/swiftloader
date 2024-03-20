@@ -2,6 +2,7 @@
 import io
 import logging
 import random
+import copy
 from dataclasses import dataclass
 import numpy as np
 from PIL import Image
@@ -44,13 +45,10 @@ class ParquetDataset(IterableDataset):
                  shuffle: bool = True,
                  *args,
                  **kwargs
-                 ) -> None:        
+                 ) -> None:
+        
         self.root_dir = root_dir if isinstance(root_dir, Path) else Path(root_dir)
         self.datasets_info = datasets_info
-        if len(self.datasets_info) > 1:
-            raise ValueError("For parquet dataset it is only possible to load one dataset at a time.")
-        if len(self.datasets_info[0]["scenes"]) > 1:
-            raise ValueError("For parquet dataset it is only possible to load one scene at a time.")
         self.batch_size = batch_size
         self.drop_last = drop_last
         self.shuffle = shuffle
@@ -58,45 +56,55 @@ class ParquetDataset(IterableDataset):
             format_data = self._format_data
         self.format_data = format_data
 
-        self.dataset = self._load_dataset(self.root_dir, self.datasets_info[0])
+        self.datasets = []
+        for dataset_info in self.datasets_info:
+            name = dataset_info["name"]
+            for scene in dataset_info["scenes"]:
+                self.datasets.append(self._load_dataset(self.root_dir, name, scene))
 
-    def _load_dataset(self, root_dir, datasets_info: DatasetInfo):  
-        path = str(root_dir / datasets_info["name"]  / datasets_info["scenes"][0])
+    def _load_dataset(self, root_dir, name, scene):
+        path = str(root_dir / name  / scene)
         if not Path(path).exists():
             raise FileNotFoundError(f"Directory {path} does not exist.")
         dataset = fp.ParquetFile(path)
         return dataset
     
     def __len__(self):
-        return self.dataset.count() // self.batch_size
+        total_len = sum([dataset.count() for dataset in self.datasets])
+        return total_len // self.batch_size if self.drop_last else -(-total_len // self.batch_size)
     
     def __iter__(self):
-        num_row_groups = len(self.dataset.row_groups)
+        ds_num_row_groups = [len(dataset.row_groups) for dataset in self.datasets]
         worker_info = get_worker_info()
 
-        # Only divide up batches when using multiple worker processes
-        if worker_info != None:
-            worker_load = num_row_groups // worker_info.num_workers
-            
-            # If more workers than batches exist, some won't be used
-            if worker_load == 0:
-                if worker_info.id < num_row_groups:
-                    start = worker_info.id
-                    end = worker_info.id + 1
-                else: 
-                    return
-            else:
-                start = worker_load * worker_info.id
-                end = min(start + worker_load, num_row_groups)
-                      
-        else: 
-            start = 0
-            end = num_row_groups
+        # Only divide up batches when using multiple worker processe
+        worker_load_info = []
+        for i, num_row_groups in enumerate(ds_num_row_groups):
+            if worker_info != None:
+                worker_load = num_row_groups // worker_info.num_workers
+
+                # If more workers than batches exist, some won't be used
+                if worker_load == 0:
+                    if worker_info.id < num_row_groups:
+                        start = worker_info.id
+                        end = worker_info.id + 1
+                    else: 
+                        start = 0
+                        end = 0
+                else:
+                    start = worker_load * worker_info.id
+                    end = min(start + worker_load, num_row_groups)
+
+            else: 
+                start = 0
+                end = num_row_groups
+            worker_load_info.append({"dataset": i, "start": start, "end": end, "idx": 0, "load": np.arange(start, end)})
 
         cache = []
-        i = 0
-        worker_load = np.arange(start, end)
-        worker_load = np.random.permutation(worker_load)
+        if self.shuffle:
+            for i in range(len(worker_load_info)):
+                worker_load_info[i]["load"] = np.random.permutation(worker_load_info[i]["load"])
+       
         while True:
             if len(cache) >= self.batch_size:
                 data = cache[:self.batch_size]
@@ -104,25 +112,32 @@ class ParquetDataset(IterableDataset):
                 yield self.format_data(data)
                 continue
 
-            if i >= (end - start):
+            for wli in worker_load_info:
+                if wli["idx"] >= (wli["end"] - wli["start"]):
+                    worker_load_info.remove(wli)
+
+            if len(worker_load_info) == 0:
                 if len(cache) > 0:
                     yield self.format_data(cache)
                 break
+            
+            if self.shuffle:
+                wli = random.choice(worker_load_info)
+            else:
+                wli = worker_load_info[0]
+                
+            batch_i = wli["load"][wli["idx"]]
+            batch = self.datasets[wli["dataset"]][batch_i]
 
-            batch_i = worker_load[i]
-            batch = self.dataset[batch_i]
             batch = batch.to_pandas()
             # Convert to list of dictionaries
             batch = batch.to_dict(orient='records')
             cache.extend(batch)
             if self.shuffle:
                 random.shuffle(cache)
-            i += 1
+            wli["idx"] += 1
             
     def _format_data(self, data: List[dict]) -> List[dict]:
-        for entry in data:
-            entry['image'] = Image.open(io.BytesIO(entry['image']))
-            
         return data
 
 
