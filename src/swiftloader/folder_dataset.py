@@ -144,3 +144,48 @@ class FolderDataset(Dataset):
             data_dict[path.parent.name] = data
 
         return self.format_data(data_dict) if self.format_data is not None else data_dict
+
+
+
+class DataToFolder():
+    def __init__(self,
+                 root_dir: str | Path,
+                 dataset_name: str,
+                 scene_name: str,
+                 save_resolver: Callable | None = None,
+                 ) -> None:
+        self.root_dir = Path(root_dir)
+        self.dataset_name = dataset_name
+        self.scene_name = scene_name
+        
+        if save_resolver is None:
+            save_resolver = self._save_resolver
+        
+    def _save_resolver(self,
+                       data: Any,
+                       path: Path,
+                       entry_name: str,
+                       ) -> None:
+        if isinstance(data, PILImage):
+            data.save(path / f"{entry_name}.jpg")
+        elif isinstance(data, np.ndarray):
+            np.save(path / f"{entry_name}.npy", data)
+        elif isinstance(data, torch.Tensor):
+            torch.save(data, path / f"{entry_name}.pt")
+        elif isinstance(data, dict | list):
+            with open(path / f"{entry_name}.json", "w") as f:
+                json.dump(data, f)
+        else:
+            raise ValueError(f"Unsupported data type: {type(data)}")
+            
+    def add_entry(self, data_dict):
+        scene_dir = self.root_dir / self.dataset_name / self.scene_name
+        scene_dir.mkdir(parents=True, exist_ok=True)
+        
+        entry_name = str(int(time.time() * 1e6))
+        
+        for key, value in data_dict.items():
+            # Make a directory for the key
+            (scene_dir / key).mkdir(parents=True, exist_ok=True)
+                        
+            self._save_resolver(value, scene_dir / key, entry_name)
