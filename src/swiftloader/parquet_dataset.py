@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import numpy as np
 from PIL import Image
 from PIL.Image import Image as PILImage
-from typing import List, Callable, Any, Tuple
+from typing import List, Callable, Any, Tuple, Dict, Literal
 from pathlib import Path
 
 from torch.utils.data import IterableDataset, get_worker_info
@@ -39,6 +39,7 @@ class ParquetDataset(IterableDataset):
     def __init__(self,
                  root_dir: str | Path,
                  datasets_info: List[DatasetInfo],
+                 dataset_schema: List[Dict[Literal["field", "dtype", "loader"], Any]],
                  batch_size: int,
                  format_data: Callable[[List[dict]], Any] | None = None,
                  drop_last: bool = False,
@@ -49,6 +50,7 @@ class ParquetDataset(IterableDataset):
         
         self.root_dir = root_dir if isinstance(root_dir, Path) else Path(root_dir)
         self.datasets_info = datasets_info
+        self.dataset_schema = dataset_schema
         self.batch_size = batch_size
         self.drop_last = drop_last
         self.shuffle = shuffle
@@ -61,13 +63,30 @@ class ParquetDataset(IterableDataset):
             name = dataset_info["name"]
             for scene in dataset_info["scenes"]:
                 self.datasets.append(self._load_dataset(self.root_dir, name, scene))
-
+                
     def _load_dataset(self, root_dir, name, scene):
         path = str(root_dir / name  / scene)
         if not Path(path).exists():
             raise FileNotFoundError(f"Directory {path} does not exist.")
         dataset = fp.ParquetFile(path)
         return dataset
+    
+    def batch_format_data(self, data: List[dict]) -> List[dict]:
+        data_out = map(lambda entry: self.format_data(entry), data)
+        return list(data_out)
+        
+    def _format_data(self, data: dict) -> dict:
+        return data
+    
+    def _load_data(self, data):
+        data = copy.deepcopy(data)
+        def format_entry(entry):
+            for schema in self.dataset_schema:
+                entry[schema["field"]] = schema["loader"](entry[schema["field"]], schema["field"], schema["dtype"])
+            return entry
+        
+        data = map(lambda entry: format_entry(entry), data)
+        return data
     
     def __len__(self):
         total_len = sum([dataset.count() for dataset in self.datasets])
@@ -109,7 +128,7 @@ class ParquetDataset(IterableDataset):
             if len(cache) >= self.batch_size:
                 data = cache[:self.batch_size]
                 cache = cache[self.batch_size:]
-                yield self.format_data(data)
+                yield self.batch_format_data(self._load_data(data))
                 continue
 
             for wli in worker_load_info:
@@ -118,7 +137,7 @@ class ParquetDataset(IterableDataset):
 
             if len(worker_load_info) == 0:
                 if len(cache) > 0:
-                    yield self.format_data(cache)
+                    yield self.batch_format_data(self._load_data(data))
                 break
             
             if self.shuffle:
@@ -136,9 +155,7 @@ class ParquetDataset(IterableDataset):
             if self.shuffle:
                 random.shuffle(cache)
             wli["idx"] += 1
-            
-    def _format_data(self, data: List[dict]) -> List[dict]:
-        return data
+
 
 
 class DataToParquet():
@@ -162,6 +179,8 @@ class DataToParquet():
             self.save_data()
             
     def save_data(self):
+        if len(self.data) == 0:
+            return
         # Convert the data to a pandas dataframe
         df = pd.DataFrame(self.data[:self.entry_per_file ])
         _ = pa.Table.from_pandas(df)        

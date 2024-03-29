@@ -1,13 +1,21 @@
 import matplotlib.pyplot as plt
 import torch
 from functools import partial
+from tqdm import tqdm
 
 import torchvision.transforms.v2 as T
+from torch.utils.data import DataLoader
 
-from swiftloader import SwiftClassification
-from swiftloader.util.display import plot_switft_dataset
+from swiftloader.parquet_dataset import ParquetDataset
+from swiftloader import loaders
 
 if __name__ == "__main__":
+    
+    a = [torch.rand(3, 512, 512) for _ in range(10)]
+    a = map(lambda x: x, a)
+
+    print(torch.cat(list(a)))
+    exit()    
     
     base_transforms = T.Resize((512, 512))
     input_transforms = T.Compose([
@@ -28,13 +36,31 @@ if __name__ == "__main__":
         T.ToDtype(torch.uint8, scale=True),
     ])
     
-    dataset = SwiftClassification(
-        "/media/jure/ssd/datasets/OBJECTS_DATASET",
-        [{"name": "SM_v03"}],
-        input_transforms=input_transforms,
-        base_transforms=base_transforms,
-        attributes=["OK", "zalitost"]
+    dataset = ParquetDataset(
+        root_dir="/media/jure/ssd/datasets/parquet_datasets",
+        datasets_info=[{"name": "imagenet_1k", "scenes": ["train"]}],
+        dataset_schema = [
+                {"field": "image", "dtype": "binary", "loader": loaders.image_loader},
+                {"field": "image_annotation", "dtype": "string", "loader": loaders.json_loader},
+            ],
+            batch_size=16,
+            drop_last=False,
+            shuffle=True,
     )
+    dataloader = DataLoader(
+        dataset,
+        batch_size=None,
+        num_workers=4,
+    )
+    
+    
+    
+    it = iter(dataloader)
+    for data in tqdm(it, total=len(dataloader)):
+        pass
+    
+    exit()
+    
     
     mean, std = dataset.get_dataset_mean_std()
     
