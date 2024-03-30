@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 import torch
-from functools import partial
+from functools import partial, reduce
 from tqdm import tqdm
 
 import torchvision.transforms.v2 as T
@@ -11,11 +11,23 @@ from swiftloader import loaders
 
 if __name__ == "__main__":
     
-    a = [torch.rand(3, 512, 512) for _ in range(10)]
-    a = map(lambda x: x, a)
+    
+    def compose(*funcs):
+        return reduce(lambda f, g: lambda x: f(g(x)), funcs, lambda x: x)
+    
+    
+    f1 = lambda x: x + 1
+    f2 = lambda x: x * 2
+    f3 = lambda x: x ** 2
+    
+    f = compose(f1, f2, f3)
+    print(f(1))
+    
+    # a = [torch.rand(3, 512, 512) for _ in range(10)]
+    # a = map(lambda x: x, a)
 
-    print(torch.cat(list(a)))
-    exit()    
+    # print(torch.cat(list(a)))
+    # exit()    
     
     base_transforms = T.Resize((512, 512))
     input_transforms = T.Compose([

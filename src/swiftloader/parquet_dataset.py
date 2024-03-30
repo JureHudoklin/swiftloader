@@ -82,7 +82,10 @@ class ParquetDataset(IterableDataset):
         data = copy.deepcopy(data)
         def format_entry(entry):
             for schema in self.dataset_schema:
-                entry[schema["field"]] = schema["loader"](entry[schema["field"]], schema["field"], schema["dtype"])
+                if entry.get(schema["field"]) is not None:
+                    entry[schema["field"]] = schema["loader"](entry[schema["field"]], schema["field"], schema["dtype"])
+                else:
+                    continue
             return entry
         
         data = map(lambda entry: format_entry(entry), data)
