@@ -163,13 +163,13 @@ class ParquetDataset(IterableDataset):
 
 class DataToParquet():
     def __init__(self,
-                 save_dir: str | Path,
-                 dataset_name: str,
+                 root_dir: str | Path,
+                 dataset_info: DatasetInfo,
                  schema: pa.Schema,
                  entry_per_file: int = 10000,
                  ) -> None:
-        self.save_dir = Path(save_dir)
-        self.dataset_name = dataset_name
+        self.root_dir = Path(root_dir)
+        self.dataset_info = dataset_info
         self.schema = schema
         self.entry_per_file = entry_per_file
         
@@ -189,8 +189,9 @@ class DataToParquet():
         _ = pa.Table.from_pandas(df)        
         
         # Save the dataframe to parquet
+        path = self.root_dir / self.dataset_info["name"] / self.dataset_info["scenes"][0]
         pq.write_to_dataset(table=pa.Table.from_pandas(df),
-                            root_path=str(self.save_dir / self.dataset_name),
+                            root_path=path,
                             schema=self.schema,
         )
         

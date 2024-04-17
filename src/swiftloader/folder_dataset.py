@@ -108,7 +108,6 @@ class FolderDataset(Dataset):
                 "dtype": entry_description["dtype"],
                 "loader": entry_description["loader"],
             })
-
         return paths, data_info
 
     def __len__(self):
@@ -119,11 +118,10 @@ class FolderDataset(Dataset):
         
         data_dict = {}
         for entry in data:
-            if not entry["path"].exists():
+            if not entry["data"].exists():
                 continue
-            entry_out = entry["loader"](entry["path"], entry["field"], entry["dtype"])
+            entry_out = entry["loader"](entry["data"], entry["field"], entry["dtype"])
             data_dict[entry["field"]] = entry_out
-
         return self.format_data(data_dict) if self.format_data is not None else data_dict
 
 
@@ -156,6 +154,7 @@ class DataToFolder():
             with open(path / f"{entry_name}.json", "w") as f:
                 json.dump(data, f)
         else:
+            print(data)
             raise ValueError(f"Unsupported data type: {type(data)}")
             
     def add_entry(self, data_dict):
