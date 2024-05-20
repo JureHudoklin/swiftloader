@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import numpy as np
 from PIL import Image
 from PIL.Image import Image as PILImage
-from typing import List, Callable, Any, Tuple, Dict, Literal
+from typing import List, Callable, Any, Tuple, Dict, Literal, Sequence
 from pathlib import Path
 
 from torch.utils.data import IterableDataset, get_worker_info
@@ -41,7 +41,8 @@ class ParquetDataset(IterableDataset):
                  datasets_info: List[DatasetInfo],
                  dataset_schema: List[Dict[Literal["field", "dtype", "loader"], Any]],
                  batch_size: int,
-                 format_data: Callable[[List[dict]], Any] | None = None,
+                 format_data: Callable[[dict], Any] | None = None,
+                 batch_format_data: Callable[[List[dict]], List[dict]] | None = None,
                  drop_last: bool = False,
                  shuffle: bool = True,
                  *args,
@@ -54,9 +55,14 @@ class ParquetDataset(IterableDataset):
         self.batch_size = batch_size
         self.drop_last = drop_last
         self.shuffle = shuffle
+        
         if format_data is None:
             format_data = self._format_data
         self.format_data = format_data
+        
+        if batch_format_data is None:
+            batch_format_data = self._batch_format_data
+        self.batch_format_data = batch_format_data
 
         self.datasets = []
         for dataset_info in self.datasets_info:
@@ -71,14 +77,14 @@ class ParquetDataset(IterableDataset):
         dataset = fp.ParquetFile(path)
         return dataset
     
-    def batch_format_data(self, data: List[dict]) -> List[dict]:
+    def _batch_format_data(self, data: Sequence[dict]) -> List[dict]:
         data_out = map(lambda entry: self.format_data(entry), data)
         return list(data_out)
         
     def _format_data(self, data: dict) -> dict:
         return data
     
-    def _load_data(self, data):
+    def _load_data(self, data) -> Sequence[dict]:
         data = copy.deepcopy(data)
         def format_entry(entry):
             for schema in self.dataset_schema:

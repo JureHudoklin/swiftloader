@@ -1,5 +1,6 @@
 from typing import Dict, List, Tuple, Callable, Any, Literal, Generator
 from pathlib import Path
+import warnings
 import json
 import io
 import tempfile
@@ -17,20 +18,22 @@ from target_utils import Target
 from target_utils.util import target_filter
 from target_utils.formating import target_set_dtype
 
-from .folder_dataset import FolderDataset
-from .parquet_dataset import ParquetDataset 
-from .util.type_structs import DatasetInfo, CocoCat
-from .util.misc import HiddenPrints, loader
+from swiftloader import FolderDataset, ParquetDataset
+from swiftloader import loaders
+from swiftloader.util.type_structs import DatasetInfo, CocoCat
+from swiftloader.util.misc import HiddenPrints
 
 class ObjectDetectionBase:
     def __init__(self,
                  root_dir: str | Path,
                  datasets_info: List[DatasetInfo],
                  classless: bool = False,
+                 transform: Callable | None = None,
                  ):
         self.root_dir = root_dir if isinstance(root_dir, Path) else Path(root_dir)
         self.datasets_info = datasets_info
     
+        self.transform = transform
         self.classless = classless
         self.cat_map, self.cats = self._build_category_map(self.root_dir, self.datasets_info)
        
@@ -67,14 +70,18 @@ class ObjectDetectionBase:
         return cat_map, cats
     
     def _get_target(self, data: Dict) -> Target:
-        image = data["image"]
-        image_ann = data["annotations"]
-        image_id = image_ann["image_id"]
-        annotations = image_ann["annotations"]
+        print(data.keys())
+        image_ann = data["image_annotations"]
+        annotations = data["annotations"]
+        image_id = image_ann.get("image_id", None)
+        
+        if image_id is None:
+            warnings.warn("Image id not found in image annotations. Setting to 0. Some functions may not work.")
+            image_id = 0
         
         w, h = image_ann["width"], image_ann["height"]
         size = torch.tensor([int(h), int(w)])
-        image_id = torch.tensor(image_id)
+        image_id = torch.tensor(image_ann["image_id"])
 
         boxes = [obj["bbox"] for obj in annotations]  # xywh
         boxes = torch.as_tensor(boxes).reshape(-1, 4)  # guard against no boxes
@@ -103,21 +110,18 @@ class ObjectDetectionDatasetFolder(FolderDataset, ObjectDetectionBase):
                 root_dir: str | Path,
                 datasets_info: List[DatasetInfo],
                 format_data: Callable[[dict], Any] | None = None,
-                base_transform: Callable | None = None,
-                input_transform: Callable | None = None,
-                data_folders: List[Dict[Literal["name", "ext"], str]] = [{"name": "images", "ext": "jpg"}],
-                annotations_folders: List[str] = ["annotations"],
-                data_loader: Callable[[str, Path], Any] = loader,
+                dataset_schema: List[Dict[Literal["field", "dtype", "loader"], Any]] =
+                    [{"field": "annotations", "dtype": ".json", "loader": loaders.json_loader},
+                    {"field": "image_annotations", "dtype": ".json", "loader": loaders.json_loader},
+                    {"field": "images", "dtype": ".jpg", "loader": loaders.image_loader}],
                 classless: bool = False,
     ):
         FolderDataset.__init__(
             self,
             root_dir=root_dir,
             datasets_info=datasets_info,
+            dataset_schema=dataset_schema,
             format_data=format_data,
-            data_folders=data_folders,
-            annotations_folders=annotations_folders,
-            data_loader=data_loader,
         )
         ObjectDetectionBase.__init__(
             self,
@@ -125,8 +129,6 @@ class ObjectDetectionDatasetFolder(FolderDataset, ObjectDetectionBase):
             datasets_info=datasets_info,
             classless=classless,
         )
-        self.base_transform = base_transform
-        self.input_transform = input_transform
     
     def __getitem__(self, idx: int):
         data = super().__getitem__(idx)
@@ -139,39 +141,42 @@ class ObjectDetectionDatasetFolder(FolderDataset, ObjectDetectionBase):
             new_labels[i] = self.cat_map[image_data["dataset"]][label.item()]  # type: ignore[index]
         target["labels"] = new_labels
         
-        if self.base_transform is not None:
-            image, target = self.base_transform(image, target)
-        if self.input_transform is not None:
-            image, target = self.input_transform(image, target)
-            
+        if self.transform is not None:
+            image, target = self.transform(image, target)
+        
         target_set_dtype(target)
         return image, target
 
-    def get_dataset_api(self, valid_categories: List[Dict] | None = None,
-                        annotations_folder_name = "annotations") -> Tuple[COCO, Dict]:
+    def get_dataset_api(self, valid_categories: List[Dict] | None = None) -> Tuple[COCO, Dict]:
         images, annotations, categories = [], [], []
 
         ann_id = 0
         for idx in range(len(self)):
-            paths, data_info = self._get_data_paths(idx)
+            paths, data_info = self._get_data(idx)
+            img_ann_path = None
             ann_path = None
             for p in paths:
-                if p.name == annotations_folder_name:
+                if p["field"] == "image_annotations":
+                    img_ann_path = p
+                elif p["field"] == "annotations":
                     ann_path = p
-                    break
-            else:
-                raise FileNotFoundError(f"Annotations folder not found in {paths}")
+            if img_ann_path is None or ann_path is None:
+                raise ValueError("Image annotations or annotations not found.")
 
-            with open(ann_path) as f:
-                ann = json.load(f)
+            with open(img_ann_path["data"]) as f:
+                img_ann_ = json.load(f)
             
             img_ann = {
                 "file_name": data_info["image_name"],
-                "height": ann["height"],
-                "width": ann["width"],
-                "id": ann["image_id"],
+                "height": img_ann_["height"],
+                "width": img_ann_["width"],
+                "id": img_ann_["image_id"],
             }
             images.append(img_ann)
+            
+            with open(ann_path["data"]) as f:
+                ann = json.load(f)
+            
             for obj in ann["annotations"]:
                 obj["image_id"] =ann["image_id"],
                 obj["id"] = ann_id
@@ -208,19 +213,25 @@ class ObjectDetectionDatasetParquet(ParquetDataset, ObjectDetectionBase):
                 root_dir: str | Path,
                 datasets_info: List[DatasetInfo],
                 batch_size: int,
-                format_data: Callable[[List[dict]], Any] | None = None,
-                drop_last: bool = False,
+                dataset_schema: List[Dict[Literal["field", "dtype", "loader"], Any]] =
+                    [{"field": "annotations", "dtype": "string", "loader": loaders.json_loader},
+                    {"field": "image_annotations", "dtype": "string", "loader": loaders.json_loader},
+                    {"field": "images", "dtype": "binary", "loader": loaders.image_loader}],
+                format_data: Callable[[dict], Any] | None = None,
+                batch_format_data: Callable[[List[dict]], List[dict]] | None = None,
+                transform: Callable | None = None,
                 shuffle: bool = True,
-                base_transform: Callable | None = None,
-                input_transform: Callable | None = None,
+                drop_last: bool = False,
                 classless: bool = False,
     ):
         ParquetDataset.__init__(
             self,
             root_dir=root_dir,
             datasets_info=datasets_info,
+            dataset_schema=dataset_schema,
             batch_size=batch_size,
             format_data=format_data,
+            batch_format_data=batch_format_data,
             drop_last=drop_last,
             shuffle=shuffle,
         )
@@ -229,9 +240,8 @@ class ObjectDetectionDatasetParquet(ParquetDataset, ObjectDetectionBase):
             root_dir=root_dir,
             datasets_info=datasets_info,
             classless=classless,
+            transform=transform,
         )
-        self.base_transform = base_transform
-        self.input_transform = input_transform
         
     def __iter__(self) -> Generator[Tuple[List, List], None, None]:
         for data in super().__iter__():
@@ -242,23 +252,17 @@ class ObjectDetectionDatasetParquet(ParquetDataset, ObjectDetectionBase):
         targets = []
         images = []
         for d in data:
-            with Image.open(io.BytesIO(d["image"])) as img:
-                temp = {}
-                temp["image"] = img
-                temp["annotations"] = json.loads(d["annotations"])
-                target = super()._get_target(temp)
-                target_set_dtype(target)
-                
-                # Remap category ids
-                new_labels = torch.zeros_like(target["labels"])
-                for i, label in enumerate(target["labels"]):
-                    new_labels[i] = self.cat_map[self.datasets_info[0]["name"]][label.item()]  # type: ignore[index]
-                target["labels"] = new_labels
-                
-                if self.base_transform is not None:
-                    img, target = self.base_transform(img, target)
-                if self.input_transform is not None:
-                    img, target = self.input_transform(img, target)
+            target = super()._get_target(d)
+            target_set_dtype(target)
+            
+            # Remap category ids
+            new_labels = torch.zeros_like(target["labels"])
+            for i, label in enumerate(target["labels"]):
+                new_labels[i] = self.cat_map[self.datasets_info[0]["name"]][label.item()]  # type: ignore[index]
+            target["labels"] = new_labels
+            
+            if self.transform is not None:
+                img, target = self.transform(img, target)
            
             targets.append(target)
             images.append(img)
@@ -272,17 +276,19 @@ class ObjectDetectionDatasetParquet(ParquetDataset, ObjectDetectionBase):
         ann_id = 0
         for data in super().__iter__():
             for d in data:
-                ann = json.loads(d["annotations"])
+                annotations = d["annotations"]
+                image_annotation = d["image_annotations"]
             
                 img_ann = {
-                    "file_name": ann["file_name"],
-                    "height": ann["height"],
-                    "width": ann["width"],
-                    "id": ann["image_id"],
+                    "file_name": image_annotation["file_name"],
+                    "height": image_annotation["height"],
+                    "width": image_annotation["width"],
+                    "id": image_annotation["image_id"],
                 }
                 images.append(img_ann)
-                for obj in ann["annotations"]:
-                    obj["image_id"] = ann["image_id"],
+                
+                for obj in annotations["annotations"]:
+                    obj["image_id"] = annotations["image_id"],
                     obj["id"] = ann_id
                     obj["category_id"] = self.cat_map[self.datasets_info[0]["name"]][obj["category_id"]]
                     ann_id += 1

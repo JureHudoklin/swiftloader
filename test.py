@@ -8,13 +8,14 @@ from tqdm import tqdm
 import torchvision.transforms.v2 as T
 from torch.utils.data import DataLoader
 import json
-from swiftloader.object_detection import ObjectDetectionDatasetParquet, ParquetDataset
+from swiftloader.task.object_detection import ObjectDetectionDatasetParquet
+from swiftloader import loaders
 from swiftloader.util.display import plot_switft_dataset
 
 if __name__ == "__main__":
     
-    base_transforms = T.Resize((512, 512))
-    input_transforms = T.Compose([
+    transforms = T.Compose([
+        T.Resize((512, 512)),
         T.ToImage(),
         T.ToDtype(torch.float32, scale=True),
         T.Normalize(
@@ -33,32 +34,23 @@ if __name__ == "__main__":
     ])
     
     def format_data(d):
-        for data in d:
-            data["annotations"] = json.loads(data["annotations"])
-            for ann in data["annotations"]["annotations"]:
-                if ann["stability_score"] < 0.9:
-                    # Remove unstable annotations
-                    data["annotations"]["annotations"].remove(ann)
-            
-            data["annotations"] = json.dumps(data["annotations"])
+        for ann in data["annotations"]:
+            if ann["stability_score"] < 0.9:
+                # Remove unstable annotations
+                data["annotations"].remove(ann)
+
         return d
         
             
     
     dataset = ObjectDetectionDatasetParquet(
         root_dir = "/media/jure/ssd/datasets/parquet_datasets",
-        datasets_info=[{"name": "industrial_objects", "scenes": ["train"]}, {"name": "objects365", "scenes": ["val"]}],
+        datasets_info=[{"name": "sam", "scenes": ["train"]}],
         batch_size=2,
-        input_transform=input_transforms,
-        base_transform=base_transforms,
+        transform=transforms,
         classless=True,
-        #format_data=format_data,
     )
-    # dataset = ParquetDataset(
-    #     root_dir = "/media/jure/ssd/datasets/parquet_datasets",
-    #     datasets_info=[{"name": "industrial_objects", "scenes": ["train"]}],
-    #     batch_size=2,
-    # )
+
     print(len(dataset))
    
     dataloader = DataLoader(

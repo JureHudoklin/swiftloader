@@ -20,22 +20,6 @@ class HiddenPrints:
         sys.stdout.close()
         sys.stdout = self._original_stdout
 
-def loader(ext: str, path: Path) -> Any:
-    if ext == ".json":
-        with open(path, "r") as f:
-            return json.load(f)    
-    elif ext in [".jpg", ".jpeg", ".png"]:
-        with Image.open(path) as img:
-                image = img.convert("RGB")
-                image = ImageOps.exif_transpose(image)
-        return image
-    elif ext in [".npy"]:
-        return np.load(path)
-    elif ext in [".pt", ".pth"]:
-        return torch.load(path)
-    else:
-        raise ValueError(f"Unsupported file extension: {ext}")
-
 def get_bbox_from_mask(
     alpha_mask: Tensor,
     background_threshold: int = 230,
