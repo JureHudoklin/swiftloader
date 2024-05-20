@@ -34,6 +34,15 @@ class CocoImage(TypedDict):
     coco_url: str
     date_captured: str
     
+class CocoInfo(TypedDict):
+    name: str
+    year: int
+    version: str
+    description: str
+    contributor: str
+    url: str
+    date_created: str
+    
 class DdpConfig(TypedDict):
     world_size: int
     rank: int

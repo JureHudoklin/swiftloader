@@ -45,16 +45,25 @@ if __name__ == "__main__":
     
     dataset = ObjectDetectionDatasetParquet(
         root_dir = "/home/jure/datasets/parquet_datasets",
-        datasets_info=[{"name": "objects365", "scenes": ["val_"]}],
+        datasets_info=[{"name": "objects365", "scenes": ["val"]}],
         batch_size=2,
         transform=transforms,
         classless=False,
     )
+    ds_2 = ObjectDetectionDatasetParquet(
+        root_dir = "/home/jure/datasets/parquet_datasets",
+        datasets_info=[{"name": "objects365", "scenes": ["val"]}],
+        batch_size=2,
+        transform=transforms,
+        classless=False,
+    )
+    ds = dataset + ds_2
 
     print(len(dataset))
+    print(len(ds))
    
     dataloader = DataLoader(
-        dataset,
+        ds,
         batch_size=None,
         num_workers=2,
     )
