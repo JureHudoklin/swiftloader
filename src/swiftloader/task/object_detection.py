@@ -16,7 +16,7 @@ from torchvision.transforms.v2 import functional as TF
 from pycocotools.coco import COCO
 from target_utils import Target
 from target_utils.util import target_filter
-from target_utils.formating import target_set_dtype
+from target_utils.formating import target_set_dtype, target_reset_tvtensor
 
 from swiftloader import FolderDataset, ParquetDataset
 from swiftloader import loaders
@@ -70,7 +70,6 @@ class ObjectDetectionBase:
         return cat_map, cats
     
     def _get_target(self, data: Dict) -> Target:
-        print(data.keys())
         image_ann = data["image_annotations"]
         annotations = data["annotations"]
         image_id = image_ann.get("image_id", None)
@@ -143,6 +142,7 @@ class ObjectDetectionDatasetFolder(FolderDataset, ObjectDetectionBase):
         
         if self.transform is not None:
             image, target = self.transform(image, target)
+            target = target_reset_tvtensor(target)
         
         target_set_dtype(target)
         return image, target
@@ -216,7 +216,7 @@ class ObjectDetectionDatasetParquet(ParquetDataset, ObjectDetectionBase):
                 dataset_schema: List[Dict[Literal["field", "dtype", "loader"], Any]] =
                     [{"field": "annotations", "dtype": "string", "loader": loaders.json_loader},
                     {"field": "image_annotations", "dtype": "string", "loader": loaders.json_loader},
-                    {"field": "images", "dtype": "binary", "loader": loaders.image_loader}],
+                    {"field": "image", "dtype": "binary", "loader": loaders.image_loader}],
                 format_data: Callable[[dict], Any] | None = None,
                 batch_format_data: Callable[[List[dict]], List[dict]] | None = None,
                 transform: Callable | None = None,
@@ -252,6 +252,7 @@ class ObjectDetectionDatasetParquet(ParquetDataset, ObjectDetectionBase):
         targets = []
         images = []
         for d in data:
+            img = d["image"]
             target = super()._get_target(d)
             target_set_dtype(target)
             
@@ -263,6 +264,7 @@ class ObjectDetectionDatasetParquet(ParquetDataset, ObjectDetectionBase):
             
             if self.transform is not None:
                 img, target = self.transform(img, target)
+                target = target_reset_tvtensor(target)
            
             targets.append(target)
             images.append(img)

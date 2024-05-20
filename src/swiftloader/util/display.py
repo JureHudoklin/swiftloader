@@ -44,7 +44,7 @@ def plot_switft_dataset(img: Union[torch.Tensor, PILImage], target: Target | Non
                                 out_fmt="xyxy")
         boxes = clip_boxes_to_image(boxes, img.shape[-2:]) # type: ignore[call-overload]
         
-        line_width = int(max(img.shape[-2:]) / 500)
+        line_width = int(max(img.shape[-2:]) / 500)+1
         font_size = int(max(img.shape[-2:]) / 50)
         
         img = draw_bounding_boxes(img, boxes, labels, width=line_width, font_size=font_size, font="DejaVuSans", colors="green")
