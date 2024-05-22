@@ -119,6 +119,7 @@ class ObjectDetectionDatasetFolder(FolderDataset, ObjectDetectionBase):
                     {"field": "image_annotation", "dtype": ".json", "loader": loaders.json_loader},
                     {"field": "images", "dtype": ".jpg", "loader": loaders.image_loader}],
                 classless: bool = False,
+                transform: Callable | None = None,
     ):
         FolderDataset.__init__(
             self,
@@ -132,6 +133,7 @@ class ObjectDetectionDatasetFolder(FolderDataset, ObjectDetectionBase):
             root_dir=root_dir,
             datasets_info=datasets_info,
             classless=classless,
+            transform=transform,
         )
     
     def __getitem__(self, idx: int):

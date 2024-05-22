@@ -49,11 +49,13 @@ if __name__ == "__main__":
         transform=transforms,
         classless=False,
     )
+    ds = dataset + ds_2
 
     print(len(dataset))
+    print(len(ds))
    
     dataloader = DataLoader(
-        dataset,
+        ds,
         batch_size=None,
         num_workers=2,
     )

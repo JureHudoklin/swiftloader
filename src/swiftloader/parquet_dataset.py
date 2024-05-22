@@ -70,21 +70,78 @@ class ParquetDataset(IterableDataset):
             for scene in dataset_info["scenes"]:
                 self.datasets.append(self._load_dataset(self.root_dir, name, scene))
                 
-    def _load_dataset(self, root_dir, name, scene):
-        path = str(root_dir / name  / scene)
+    def _load_dataset(self, root_dir: Path, name: str, scene: str) -> fp.ParquetFile:
+        """Load a Parquet dataset.
+
+        Parameters
+        ----------
+        root_dir : Path
+            The root directory of the dataset.
+        name : str
+            The name of the dataset.
+        scene : str
+            The name of the scene within the dataset.
+
+        Returns
+        -------
+        fp.ParquetFile
+            The loaded Parquet dataset.
+
+        Raises
+        ------
+        FileNotFoundError
+            If the specified directory does not exist.
+        """
+        path = str(root_dir / name / scene)
         if not Path(path).exists():
             raise FileNotFoundError(f"Directory {path} does not exist.")
         dataset = fp.ParquetFile(path)
         return dataset
     
-    def _batch_format_data(self, data: Sequence[dict]) -> List[dict]:
+    def _batch_format_data(self, data: List[dict]) -> List[dict]:
+        """ A dummy function for formatting a whole batch of data.
+        It applies the format_data function to each entry in the batch.
+        It is recommended to provide a function with more efficient implementation.
+
+        Parameters
+        ----------
+        data : List[dict]
+
+        Returns
+        -------
+        List[dict]
+            The formatted data.
+        """
         data_out = map(lambda entry: self.format_data(entry), data)
         return list(data_out)
         
     def _format_data(self, data: dict) -> dict:
+        """ A dummy function for formatting a single entry of data.
+
+        Parameters
+        ----------
+        data : dict
+        
+        Returns
+        -------
+        dict
+            The formatted data.
+        """
         return data
     
-    def _load_data(self, data) -> Sequence[dict]:
+    def _load_data(self, data: List[dict]) -> Sequence[dict]:
+        """ Using the dataset schema, load the data from the parquet file.
+
+        Parameters
+        ----------
+        data : List[dict]
+            Raw data from the parquet file.
+
+        Returns
+        -------
+        Sequence[dict]
+            The data formatted according to the dataset schema.
+        """
         data = copy.deepcopy(data)
         def format_entry(entry):
             for schema in self.dataset_schema:
@@ -94,7 +151,7 @@ class ParquetDataset(IterableDataset):
                     continue
             return entry
         
-        data = map(lambda entry: format_entry(entry), data)
+        data = map(lambda entry: format_entry(entry), data) # type: ignore
         return data
     
     def __len__(self):
@@ -137,7 +194,7 @@ class ParquetDataset(IterableDataset):
             if len(cache) >= self.batch_size:
                 data = cache[:self.batch_size]
                 cache = cache[self.batch_size:]
-                yield self.batch_format_data(self._load_data(data))
+                yield self.batch_format_data(self._load_data(data)) # type: ignore
                 continue
 
             for wli in worker_load_info:
@@ -146,7 +203,7 @@ class ParquetDataset(IterableDataset):
 
             if len(worker_load_info) == 0:
                 if len(cache) > 0:
-                    yield self.batch_format_data(self._load_data(data))
+                    yield self.batch_format_data(self._load_data(data)) # type: ignore
                 break
             
             if self.shuffle:
@@ -181,13 +238,30 @@ class DataToParquet():
         
         self.data = []
         
-    def add_entry(self, data_dict):
+    def add_entry(self, data_dict: dict):
+        """Add an entry to the dataset.
+
+        This method appends a data dictionary to the dataset. If the number of entries in the dataset
+        reaches the specified limit, the data is saved to a file.
+
+        Parameters
+        ----------
+        data_dict : dict
+            A dictionary containing the data to be added to the dataset.
+
+        Returns
+        -------
+        None
+        """
         self.data.append(data_dict)
         
         if len(self.data) >= self.entry_per_file :
             self.save_data()
             
     def save_data(self):
+        """
+        Save the data to a parquet file. It is recommended to call this method after adding all the data.
+        """
         if len(self.data) == 0:
             return
         # Convert the data to a pandas dataframe
