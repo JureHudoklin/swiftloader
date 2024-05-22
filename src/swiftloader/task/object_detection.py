@@ -22,6 +22,7 @@ from swiftloader import FolderDataset, ParquetDataset
 from swiftloader import loaders
 from swiftloader.util.type_structs import DatasetInfo, CocoCat
 from swiftloader.util.misc import HiddenPrints
+from .utils import AnyDict
 
 class ObjectDetectionBase:
     def __init__(self,
@@ -43,25 +44,29 @@ class ObjectDetectionBase:
         cat_map = defaultdict(dict)
         cats = {}
         
-        dataset_cats = {}
-        for dataset_info in datasets_info:
-            cats_path = data_root / dataset_info["name"] / "categories.json"
-            if not cats_path.exists():
-                raise ValueError(f"Categories file not found for dataset {dataset_info['name']}")
-            with open(data_root / dataset_info["name"] / "categories.json") as f:
-                categories = json.load(f)
-                dataset_cats[dataset_info["name"]] = categories
-        new_cat_id = 0
+        if self.classless:
+            cat_map = {}
+            cats[1] = {
+                "id": 1,
+                "name": "object",
+                "supercategory": "object",
+            }
+            for dataset_info in datasets_info:
+                cat_map[dataset_info["name"]] = AnyDict(1)
+                
+        else:
+            dataset_cats = {}
+            for dataset_info in datasets_info:
+                cats_path = data_root / dataset_info["name"] / "categories.json"
+                if not cats_path.exists() and not self.classless:
+                    raise ValueError(f"Categories file not found for dataset {dataset_info['name']}")
+                with open(data_root / dataset_info["name"] / "categories.json") as f:
+                    categories = json.load(f)
+                    dataset_cats[dataset_info["name"]] = categories
+            new_cat_id = 0
 
-        for dataset, categories in dataset_cats.items():
-            for cat in categories:
-                if self.classless:
-                    cat_map[dataset][cat["id"]] = 1
-                    cat["id"] = 1
-                    cat["name"] = "object"
-                    cat["supercategory"] = "object"
-                    cats[1] = cat
-                else:
+            for dataset, categories in dataset_cats.items():
+                for cat in categories:
                     new_cat_id += 1
                     cat_map[dataset][cat["id"]] = new_cat_id
                     cat["id"] = new_cat_id
@@ -70,7 +75,7 @@ class ObjectDetectionBase:
         return cat_map, cats
     
     def _get_target(self, data: Dict) -> Target:
-        image_ann = data["image_annotations"]
+        image_ann = data["image_annotation"]
         annotations = data["annotations"]
         image_id = image_ann.get("image_id", None)
         
@@ -111,7 +116,7 @@ class ObjectDetectionDatasetFolder(FolderDataset, ObjectDetectionBase):
                 format_data: Callable[[dict], Any] | None = None,
                 dataset_schema: List[Dict[Literal["field", "dtype", "loader"], Any]] =
                     [{"field": "annotations", "dtype": ".json", "loader": loaders.json_loader},
-                    {"field": "image_annotations", "dtype": ".json", "loader": loaders.json_loader},
+                    {"field": "image_annotation", "dtype": ".json", "loader": loaders.json_loader},
                     {"field": "images", "dtype": ".jpg", "loader": loaders.image_loader}],
                 classless: bool = False,
     ):
@@ -135,9 +140,12 @@ class ObjectDetectionDatasetFolder(FolderDataset, ObjectDetectionBase):
         image = data["images"]
         
         # Remap category ids
-        new_labels = torch.zeros_like(target["labels"])
-        for i, label in enumerate(target["labels"]):
-            new_labels[i] = self.cat_map[image_data["dataset"]][label.item()]  # type: ignore[index]
+        if self.classless:
+            new_labels = torch.ones_like(target["labels"])
+        else:
+            new_labels = torch.zeros_like(target["labels"])
+            for i, label in enumerate(target["labels"]):
+                new_labels[i] = self.cat_map[image_data["dataset"]][label.item()]  # type: ignore[index]
         target["labels"] = new_labels
         
         if self.transform is not None:
@@ -156,7 +164,7 @@ class ObjectDetectionDatasetFolder(FolderDataset, ObjectDetectionBase):
             img_ann_path = None
             ann_path = None
             for p in paths:
-                if p["field"] == "image_annotations":
+                if p["field"] == "image_annotation":
                     img_ann_path = p
                 elif p["field"] == "annotations":
                     ann_path = p
@@ -215,7 +223,7 @@ class ObjectDetectionDatasetParquet(ParquetDataset, ObjectDetectionBase):
                 batch_size: int,
                 dataset_schema: List[Dict[Literal["field", "dtype", "loader"], Any]] =
                     [{"field": "annotations", "dtype": "string", "loader": loaders.json_loader},
-                    {"field": "image_annotations", "dtype": "string", "loader": loaders.json_loader},
+                    {"field": "image_annotation", "dtype": "string", "loader": loaders.json_loader},
                     {"field": "image", "dtype": "binary", "loader": loaders.image_loader}],
                 format_data: Callable[[dict], Any] | None = None,
                 batch_format_data: Callable[[List[dict]], List[dict]] | None = None,
@@ -257,10 +265,13 @@ class ObjectDetectionDatasetParquet(ParquetDataset, ObjectDetectionBase):
             target_set_dtype(target)
             
             # Remap category ids
-            new_labels = torch.zeros_like(target["labels"])
-            for i, label in enumerate(target["labels"]):
-                new_labels[i] = self.cat_map[self.datasets_info[0]["name"]][label.item()]  # type: ignore[index]
-            target["labels"] = new_labels
+            if self.classless:
+                new_labels = torch.ones_like(target["labels"])
+            else:
+                new_labels = torch.zeros_like(target["labels"])
+                for i, label in enumerate(target["labels"]):
+                    new_labels[i] = self.cat_map[self.datasets_info[0]["name"]][label.item()]  # type: ignore[index]
+                target["labels"] = new_labels
             
             if self.transform is not None:
                 img, target = self.transform(img, target)
@@ -279,7 +290,7 @@ class ObjectDetectionDatasetParquet(ParquetDataset, ObjectDetectionBase):
         for data in super().__iter__():
             for d in data:
                 annotations = d["annotations"]
-                image_annotation = d["image_annotations"]
+                image_annotation = d["image_annotation"]
             
                 img_ann = {
                     "file_name": image_annotation["file_name"],

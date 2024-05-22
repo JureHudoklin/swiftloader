@@ -6,8 +6,9 @@ from PIL import Image
 import io
 import json
 import pyarrow as pa
+from tqdm import tqdm
 
-data_root = Path("/home/jure/datasets/parquet_datasets")
+data_root = Path("/media/jure/ssd/datasets/parquet_datasets")
 
 dataset = ParquetDataset(
     root_dir=data_root,
@@ -32,7 +33,7 @@ parquetizer = DataToParquet(
     ),
 )
 
-for data in dataset:
+for data in tqdm(dataset):
     data = data[0]
     
     image_bytes = data["image"]
@@ -43,6 +44,11 @@ for data in dataset:
         "width": a["width"],
         "height": a["height"],
         "image_id": a["image_id"],
+        "dataset_info": {
+            "dataset": "objects365",
+            "version": "1.0",
+            "date_created": "2024-05-21",
+        }
     }
     
     data_new = {
