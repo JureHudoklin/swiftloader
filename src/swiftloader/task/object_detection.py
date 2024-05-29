@@ -2,9 +2,10 @@ from typing import Dict, List, Tuple, Callable, Any, Literal, Generator
 from pathlib import Path
 import warnings
 import json
-import io
+import copy
 import tempfile
 from collections import defaultdict
+from tqdm import tqdm
 from PIL import Image, ImageOps, ImageFile
 from PIL.Image import Image as PILImage
 
@@ -70,7 +71,7 @@ class ObjectDetectionBase:
         return cat_map, cats
     
     def _get_target(self, data: Dict) -> Target:
-        image_ann = data["image_annotations"]
+        image_ann = data["image_annotation"]
         annotations = data["annotations"]
         image_id = image_ann.get("image_id", None)
         
@@ -103,6 +104,9 @@ class ObjectDetectionBase:
     
     def get_categories(self) -> List:
         return list(self.cats.values())
+    
+    def get_dataset_api(self, valid_categories: List[Dict] | None = None) -> Tuple[COCO, Dict]:
+        raise NotImplementedError("Method get_dataset_api not implemented.")
 
 class ObjectDetectionDatasetFolder(FolderDataset, ObjectDetectionBase):
     def __init__(self,
@@ -111,7 +115,7 @@ class ObjectDetectionDatasetFolder(FolderDataset, ObjectDetectionBase):
                 format_data: Callable[[dict], Any] | None = None,
                 dataset_schema: List[Dict[Literal["field", "dtype", "loader"], Any]] =
                     [{"field": "annotations", "dtype": ".json", "loader": loaders.json_loader},
-                    {"field": "image_annotations", "dtype": ".json", "loader": loaders.json_loader},
+                    {"field": "image_annotation", "dtype": ".json", "loader": loaders.json_loader},
                     {"field": "images", "dtype": ".jpg", "loader": loaders.image_loader}],
                 classless: bool = False,
                 transform: Callable | None = None,
@@ -158,7 +162,7 @@ class ObjectDetectionDatasetFolder(FolderDataset, ObjectDetectionBase):
             img_ann_path = None
             ann_path = None
             for p in paths:
-                if p["field"] == "image_annotations":
+                if p["field"] == "image_annotation":
                     img_ann_path = p
                 elif p["field"] == "annotations":
                     ann_path = p
@@ -217,7 +221,7 @@ class ObjectDetectionDatasetParquet(ParquetDataset, ObjectDetectionBase):
                 batch_size: int,
                 dataset_schema: List[Dict[Literal["field", "dtype", "loader"], Any]] =
                     [{"field": "annotations", "dtype": "string", "loader": loaders.json_loader},
-                    {"field": "image_annotations", "dtype": "string", "loader": loaders.json_loader},
+                    {"field": "image_annotation", "dtype": "string", "loader": loaders.json_loader},
                     {"field": "image", "dtype": "binary", "loader": loaders.image_loader}],
                 format_data: Callable[[dict], Any] | None = None,
                 batch_format_data: Callable[[List[dict]], List[dict]] | None = None,
@@ -278,21 +282,20 @@ class ObjectDetectionDatasetParquet(ParquetDataset, ObjectDetectionBase):
         images, annotations, categories = [], [], []
 
         ann_id = 0
-        for data in super().__iter__():
+        for data in tqdm(super().__iter__()):
             for d in data:
-                annotations = d["annotations"]
-                image_annotation = d["image_annotations"]
+                a = d["annotations"]
+                img_a = d["image_annotation"]
             
                 img_ann = {
-                    "file_name": image_annotation["file_name"],
-                    "height": image_annotation["height"],
-                    "width": image_annotation["width"],
-                    "id": image_annotation["image_id"],
+                    "height": img_a["height"],
+                    "width": img_a["width"],
+                    "id": img_a["image_id"],
                 }
                 images.append(img_ann)
                 
-                for obj in annotations["annotations"]:
-                    obj["image_id"] = annotations["image_id"],
+                for obj in a:
+                    obj["image_id"] = img_a["image_id"],
                     obj["id"] = ann_id
                     obj["category_id"] = self.cat_map[self.datasets_info[0]["name"]][obj["category_id"]]
                     ann_id += 1
