@@ -23,6 +23,7 @@ from swiftloader import FolderDataset, ParquetDataset
 from swiftloader import loaders
 from swiftloader.util.type_structs import DatasetInfo, CocoCat
 from swiftloader.util.misc import HiddenPrints
+from .utils import AnyDict
 
 class ObjectDetectionBase:
     def __init__(self,
@@ -44,25 +45,29 @@ class ObjectDetectionBase:
         cat_map = defaultdict(dict)
         cats = {}
         
-        dataset_cats = {}
-        for dataset_info in datasets_info:
-            cats_path = data_root / dataset_info["name"] / "categories.json"
-            if not cats_path.exists():
-                raise ValueError(f"Categories file not found for dataset {dataset_info['name']}")
-            with open(data_root / dataset_info["name"] / "categories.json") as f:
-                categories = json.load(f)
-                dataset_cats[dataset_info["name"]] = categories
-        new_cat_id = 0
+        if self.classless:
+            cat_map = {}
+            cats[1] = {
+                "id": 1,
+                "name": "object",
+                "supercategory": "object",
+            }
+            for dataset_info in datasets_info:
+                cat_map[dataset_info["name"]] = AnyDict(1)
+                
+        else:
+            dataset_cats = {}
+            for dataset_info in datasets_info:
+                cats_path = data_root / dataset_info["name"] / "categories.json"
+                if not cats_path.exists() and not self.classless:
+                    raise ValueError(f"Categories file not found for dataset {dataset_info['name']}")
+                with open(data_root / dataset_info["name"] / "categories.json") as f:
+                    categories = json.load(f)
+                    dataset_cats[dataset_info["name"]] = categories
+            new_cat_id = 0
 
-        for dataset, categories in dataset_cats.items():
-            for cat in categories:
-                if self.classless:
-                    cat_map[dataset][cat["id"]] = 1
-                    cat["id"] = 1
-                    cat["name"] = "object"
-                    cat["supercategory"] = "object"
-                    cats[1] = cat
-                else:
+            for dataset, categories in dataset_cats.items():
+                for cat in categories:
                     new_cat_id += 1
                     cat_map[dataset][cat["id"]] = new_cat_id
                     cat["id"] = new_cat_id
@@ -141,9 +146,12 @@ class ObjectDetectionDatasetFolder(FolderDataset, ObjectDetectionBase):
         image = data["images"]
         
         # Remap category ids
-        new_labels = torch.zeros_like(target["labels"])
-        for i, label in enumerate(target["labels"]):
-            new_labels[i] = self.cat_map[image_data["dataset"]][label.item()]  # type: ignore[index]
+        if self.classless:
+            new_labels = torch.ones_like(target["labels"])
+        else:
+            new_labels = torch.zeros_like(target["labels"])
+            for i, label in enumerate(target["labels"]):
+                new_labels[i] = self.cat_map[image_data["dataset"]][label.item()]  # type: ignore[index]
         target["labels"] = new_labels
         
         if self.transform is not None:
@@ -263,10 +271,13 @@ class ObjectDetectionDatasetParquet(ParquetDataset, ObjectDetectionBase):
             target_set_dtype(target)
             
             # Remap category ids
-            new_labels = torch.zeros_like(target["labels"])
-            for i, label in enumerate(target["labels"]):
-                new_labels[i] = self.cat_map[self.datasets_info[0]["name"]][label.item()]  # type: ignore[index]
-            target["labels"] = new_labels
+            if self.classless:
+                new_labels = torch.ones_like(target["labels"])
+            else:
+                new_labels = torch.zeros_like(target["labels"])
+                for i, label in enumerate(target["labels"]):
+                    new_labels[i] = self.cat_map[self.datasets_info[0]["name"]][label.item()]  # type: ignore[index]
+                target["labels"] = new_labels
             
             if self.transform is not None:
                 img, target = self.transform(img, target)
@@ -284,8 +295,8 @@ class ObjectDetectionDatasetParquet(ParquetDataset, ObjectDetectionBase):
         ann_id = 0
         for data in tqdm(super().__iter__()):
             for d in data:
-                a = d["annotations"]
-                img_a = d["image_annotation"]
+                annotations = d["annotations"]
+                image_annotation = d["image_annotation"]
             
                 img_ann = {
                     "height": img_a["height"],

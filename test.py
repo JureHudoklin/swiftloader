@@ -14,8 +14,7 @@ from swiftloader.util.display import plot_switft_dataset
 
 if __name__ == "__main__":
     transforms = T.Compose([
-        T.Resize((512, 512)),
-        T.CenterCrop((256, 256)),
+        # T.Resize((512, 512)),
         T.ToImage(),
         T.ToDtype(torch.float32, scale=True),
         T.Normalize(
@@ -44,15 +43,8 @@ if __name__ == "__main__":
             
     
     dataset = ObjectDetectionDatasetParquet(
-        root_dir = "/home/jure/datasets/parquet_datasets",
-        datasets_info=[{"name": "objects365", "scenes": ["val"]}],
-        batch_size=2,
-        transform=transforms,
-        classless=False,
-    )
-    ds_2 = ObjectDetectionDatasetParquet(
-        root_dir = "/home/jure/datasets/parquet_datasets",
-        datasets_info=[{"name": "objects365", "scenes": ["val"]}],
+        root_dir = "/media/jure/ssd/datasets/parquet_datasets",
+        datasets_info=[{"name": "foundation_pose", "scenes": ["train"]}],
         batch_size=2,
         transform=transforms,
         classless=False,
@@ -75,7 +67,7 @@ if __name__ == "__main__":
         img = output_transforms(images[0])
         
         fig = plot_switft_dataset(img, targets[0])
-        plt.show()
+        plt.savefig("test.png")
         plt.close(fig)
         break
     
