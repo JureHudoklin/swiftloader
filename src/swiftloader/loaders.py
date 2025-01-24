@@ -10,6 +10,57 @@ import io
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
+class ImageLoader:
+    def __init__(self, parquet: bool = False):
+        self.parquet = parquet
+        
+        self._extensions = [".jpg", ".png"]
+        
+        self.file_ext_history = ".jpg"
+        
+    def _parquet_loader(self, data: bytes) -> PILImage:
+        with Image.open(io.BytesIO(data)) as img:
+            image = img.convert("RGB")
+            image = ImageOps.exif_transpose(image)
+        return image
+    
+    def _file_loader(self, data: str | Path) -> PILImage:
+        try:
+            with Image.open(str(data)+self.file_ext_history) as img:
+                image = img.convert("RGB")
+                image = ImageOps.exif_transpose(image)
+            return image
+        
+        except FileNotFoundError:
+            for ext in self._extensions:
+                try:
+                    with Image.open(str(data)+ext) as img:
+                        image = img.convert("RGB")
+                        image = ImageOps.exif_transpose(image)
+                    self.file_ext_history = ext
+                    return image
+                except FileNotFoundError:
+                    pass
+        
+    def __call__(self, data) -> Any:
+        if self.parquet:
+            return self._parquet_loader(data)
+        else:
+            return self._file_loader(data)
+
+
+class JsonLoader:
+    def __init__(self, parquet: bool = False):
+        self.parquet = parquet
+        self._extension = ".json"
+    
+    def __call__(self, data) -> Any:
+        if self.parquet:
+            return json.loads(data)
+        else:
+            with open(str(data)+self._extension, "r") as f:
+                return json.load(f)
+
 
 def image_loader(data, field: str, dtype: str) -> PILImage:
     if dtype == "binary":

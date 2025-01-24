@@ -9,12 +9,8 @@ from torch.utils.data import DataLoader
 from swiftloader import FolderDataset, ParquetDataset
 from swiftloader.task.object_detection import ObjectDetectionDatasetParquet
 from swiftloader import loaders
-from swiftloader.util import DatasetToCoco, DatasetToYolo
+from swiftloader.util import DatasetToCoco
 from swiftloader.util.display import draw_bounding_boxes
-
-def collate_fn(batch):
-    # Return list of dictionaries
-    return batch
 
 if __name__ == "__main__":
     
@@ -52,7 +48,7 @@ if __name__ == "__main__":
     
     dataset = FolderDataset(
         root_dir="/media/jure/ssd/datasets/folder_datasets",
-        datasets_info=[{"name": "SM_object_detection", "scenes": ["test3"]}], # "test", "test1", "test2", "SM_train_real", "SM_val_real"
+        datasets_info=[{"name": "SM_object_detection", "scenes": ["SM_train_real", "test2"]}],
         dataset_schema = [
                 {"field": "image", "dtype": ".jpg", "loader": loaders.image_loader},
                 {"field": "image_annotation", "dtype": ".json", "loader": loaders.json_loader},
@@ -61,31 +57,26 @@ if __name__ == "__main__":
         drop_last=False,
         shuffle=True,
     )
-    dataloader = DataLoader(
-        dataset,
-        batch_size=1,
-        num_workers=0,
-        shuffle=True,
-        collate_fn=collate_fn,
+    
+    
+    for data in dataset:
+        print(data)
+        image = data["image"]
+        
+        image = draw_bounding_boxes(image, data["annotations"])
+        
+        plt.imshow(image)
+        plt.show()
+        
+    exit()
+    
+    ds_to_coco = DatasetToCoco(
+        dataset=dataset,
+        save_dir="/media/jure/ssd/datasets/coco_datasets",
+        dataset_name="industrial_objects",
+        split_ratio=[0.8, 0.2, 0],
     )
     
-    
-    # for data in dataloader:
-    #     image = data["image"]
-        
-    #     image = draw_bounding_boxes(image, data["annotations"])
-        
-    #     plt.imshow(image)
-    #     plt.show()
-        
-    
-    ds_to_coco = DatasetToYolo(
-        dataset=dataloader,
-        save_dir="/media/jure/ssd/datasets/yolo_datasets",
-        dataset_name="sm_object_detection3",
-        split_ratio=[1.0, 0.0, 0.0]
-    )
-    
-    ds_to_coco.to_yolo_object_detection()
+    ds_to_coco.to_coco()
 
     

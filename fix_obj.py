@@ -12,7 +12,7 @@ data_root = Path("/media/jure/ssd/datasets/parquet_datasets")
 
 dataset = ParquetDataset(
     root_dir=data_root,
-    datasets_info=[{"name": "objects365", "scenes": ["val"]}],
+    datasets_info=[{"name": "industrial_objects", "scenes": ["train"]}],
     dataset_schema=[
         {"field": "image", "dtype": "binary", "loader": loaders.identity_loader},
         {"field": "annotations", "dtype": "string", "loader": loaders.json_loader},
@@ -23,12 +23,12 @@ dataset = ParquetDataset(
 )
 parquetizer = DataToParquet(
     root_dir=data_root,
-    dataset_info={"name": "objects365", "scenes": ["val_"]},
+    dataset_info={"name": "industrial_objects", "scenes": ["train_v3"]},
     schema=pa.schema(
         [
             pa.field("image", pa.binary()),
             pa.field("annotations", pa.string()),
-            pa.field("image_annotations", pa.string()),
+            pa.field("image_annotation", pa.string()),
         ]
     ),
 )
@@ -54,7 +54,7 @@ for data in tqdm(dataset):
     data_new = {
         "image": image_bytes,
         "annotations": json.dumps(annotations),
-        "image_annotations": json.dumps(img_ann),
+        "image_annotation": json.dumps(img_ann),
     }
     
     parquetizer.add_entry(data_new)

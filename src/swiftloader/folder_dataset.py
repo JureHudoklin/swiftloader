@@ -103,7 +103,7 @@ class FolderDataset(Dataset):
         paths = []
         for entry_description in self.dataset_schema:
             paths.append({
-                "data": self.root_dir / dataset / scene / entry_description["field"] / f"{data_name}{entry_description['dtype']}",
+                "data": self.root_dir / dataset / scene / entry_description["field"] / f"{data_name}",
                 "field": entry_description["field"],
                 "dtype": entry_description["dtype"],
                 "loader": entry_description["loader"],
@@ -120,7 +120,7 @@ class FolderDataset(Dataset):
         for entry in data:
             if not entry["data"].exists():
                 continue
-            entry_out = entry["loader"](entry["data"], entry["field"], entry["dtype"])
+            entry_out = entry["loader"](entry["data"])
             data_dict[entry["field"]] = entry_out
         return self.format_data(data_dict) if self.format_data is not None else data_dict
 
@@ -135,6 +135,8 @@ class DataToFolder():
         self.root_dir = Path(root_dir)
         self.dataset_name = dataset_name
         self.scene_name = scene_name
+        
+        self._count = 0
         
         if save_resolver is None:
             save_resolver = self._save_resolver
@@ -156,6 +158,9 @@ class DataToFolder():
         else:
             print(data)
             raise ValueError(f"Unsupported data type: {type(data)}")
+        
+    def get_count(self):
+        return self._count
             
     def add_entry(self, data_dict):
         scene_dir = self.root_dir / self.dataset_name / self.scene_name
@@ -168,3 +173,5 @@ class DataToFolder():
             (scene_dir / key).mkdir(parents=True, exist_ok=True)
                         
             self._save_resolver(value, scene_dir / key, entry_name)
+            
+        self._count += 1

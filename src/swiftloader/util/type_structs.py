@@ -47,3 +47,7 @@ class DdpConfig(TypedDict):
     world_size: int
     rank: int
     ddp_enabled: bool
+    
+class YoloBoxAnn(TypedDict):
+    category_id: int
+    bbox: List[float] # cx, cy, w, h (Normalized)

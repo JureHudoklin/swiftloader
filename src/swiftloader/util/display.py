@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from mpl_toolkits.axes_grid1 import ImageGrid
 
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from PIL.Image import Image as PILImage
 
 import torch
@@ -12,10 +12,56 @@ from torchvision.ops import box_convert, clip_boxes_to_image
 from torchvision.utils import draw_bounding_boxes
 from torchvision.tv_tensors import BoundingBoxFormat
 
-from typing import List, Callable, Union
+from typing import List, Callable, Union, Dict, Any 
 
 from target_utils import Target
 from target_utils.formating import target_box_format_to_enum, target_enum_to_box_format
+
+def draw_bounding_boxes(img: PILImage,
+                        annotations: List[Dict[str, Any]],
+                        width: int | None = None,
+                        font_size: int = 10,
+                        colors: Union[str, List[str]] = "green") -> PILImage:
+    draw = ImageDraw.Draw(img)
+    try:
+        font = ImageFont.truetype("arial.ttf", font_size)
+    except IOError:
+        font = ImageFont.load_default()
+    
+    if width is None:
+        width = int(max(img.size) / 500) + 1
+    
+    if isinstance(colors, str):
+        colors = [colors]
+    
+    for idx, ann in enumerate(annotations):
+        bbox = ann.get("bbox", None)
+        if bbox is None:
+            continue
+        category = ann.get('category', 'Object')
+        
+        # COCO format: [x, y, width, height]
+        x, y, w, h = bbox
+        
+        # Calculate coordinates for rectangle
+        top_left = (x, y)
+        bottom_right = (x + w, y + h)
+        
+        # Choose color
+        color = colors[idx % len(colors)]
+        
+        # Draw bounding box
+        draw.rectangle([top_left, bottom_right], outline=color, width=width)
+        
+        # Draw label
+        label = f"{category}"
+        bbox = draw.textbbox(top_left, label, font=font)
+        draw.rectangle(bbox, fill=color)
+        draw.text(top_left, label, fill="white", font=font)
+    
+    return img
+
+
 
 def plot_switft_dataset(img: Union[torch.Tensor, PILImage], target: Target | None = None) -> Figure:
     """Plot an image with bounding boxes and labels.
