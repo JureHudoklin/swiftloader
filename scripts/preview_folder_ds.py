@@ -47,12 +47,12 @@ if __name__ == "__main__":
     # )
     
     dataset = FolderDataset(
-        root_dir="/media/jure/ssd/datasets/folder_datasets",
-        datasets_info=[{"name": "SM_object_detection", "scenes": ["SM_train_real", "test2"]}],
+        root_dir="/home/jure/datasets/folder_datasets",
+        datasets_info=[{"name": "SM", "scenes": ["pose_detection_v1"]}],
         dataset_schema = [
-                {"field": "image", "dtype": ".jpg", "loader": loaders.image_loader},
-                {"field": "image_annotation", "dtype": ".json", "loader": loaders.json_loader},
-                {"field": "annotations", "dtype": ".json", "loader": loaders.json_loader},
+                {"field": "image", "dtype": "PIL", "loader": loaders.ImageLoader()},
+                {"field": "image_annotation", "dtype": "json", "loader": loaders.JsonLoader()},
+                {"field": "annotations", "dtype": "json", "loader": loaders.JsonLoader()},
             ],
         drop_last=False,
         shuffle=True,
@@ -70,13 +70,13 @@ if __name__ == "__main__":
         
     exit()
     
-    ds_to_coco = DatasetToCoco(
-        dataset=dataset,
-        save_dir="/media/jure/ssd/datasets/coco_datasets",
-        dataset_name="industrial_objects",
-        split_ratio=[0.8, 0.2, 0],
-    )
+    # ds_to_coco = DatasetToCoco(
+    #     dataset=dataset,
+    #     save_dir="/media/jure/ssd/datasets/coco_datasets",
+    #     dataset_name="industrial_objects",
+    #     split_ratio=[0.8, 0.2, 0],
+    # )
     
-    ds_to_coco.to_coco()
+    # ds_to_coco.to_coco()
 
     

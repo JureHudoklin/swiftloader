@@ -118,7 +118,7 @@ class FolderDataset(Dataset):
         
         data_dict = {}
         for entry in data:
-            if not entry["data"].exists():
+            if not entry["data"].parent.exists():
                 continue
             entry_out = entry["loader"](entry["data"])
             data_dict[entry["field"]] = entry_out

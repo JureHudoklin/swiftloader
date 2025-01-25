@@ -41,8 +41,10 @@ class ImageLoader:
                     return image
                 except FileNotFoundError:
                     pass
+            raise FileNotFoundError(f"Image file not found: {data}")
         
     def __call__(self, data) -> Any:
+        print("Called")
         if self.parquet:
             return self._parquet_loader(data)
         else:
