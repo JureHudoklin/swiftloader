@@ -10,7 +10,7 @@ from swiftloader import FolderDataset, ParquetDataset
 from swiftloader.task.object_detection import ObjectDetectionDatasetParquet
 from swiftloader import loaders
 from swiftloader.util import DatasetToCoco
-from swiftloader.util.display import draw_bounding_boxes
+from swiftloader.util.display import draw_bounding_boxes, draw_keypoints
 
 if __name__ == "__main__":
     
@@ -47,7 +47,7 @@ if __name__ == "__main__":
     # )
     
     dataset = FolderDataset(
-        root_dir="/home/jure/datasets/folder_datasets",
+        root_dir="/media/jure/ssd/datasets/folder_datasets",
         datasets_info=[{"name": "SM", "scenes": ["pose_detection_v1"]}],
         dataset_schema = [
                 {"field": "image", "dtype": "PIL", "loader": loaders.ImageLoader()},
@@ -64,6 +64,7 @@ if __name__ == "__main__":
         image = data["image"]
         
         image = draw_bounding_boxes(image, data["annotations"])
+        image = draw_keypoints(image, data["annotations"])
         
         plt.imshow(image)
         plt.show()

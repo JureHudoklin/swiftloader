@@ -12,53 +12,88 @@ from torchvision.ops import box_convert, clip_boxes_to_image
 from torchvision.utils import draw_bounding_boxes
 from torchvision.tv_tensors import BoundingBoxFormat
 
-from typing import List, Callable, Union, Dict, Any 
+from typing import List, Callable, Union, Dict, Any
 
 from target_utils import Target
 from target_utils.formating import target_box_format_to_enum, target_enum_to_box_format
 
+
 def draw_bounding_boxes(img: PILImage,
                         annotations: List[Dict[str, Any]],
                         width: int | None = None,
-                        font_size: int = 10,
+                        font_size: int | None = None,
                         colors: Union[str, List[str]] = "green") -> PILImage:
     draw = ImageDraw.Draw(img)
+    if font_size is None:
+        font_size = int(max(img.size) / 50) + 1
+        
     try:
         font = ImageFont.truetype("arial.ttf", font_size)
     except IOError:
-        font = ImageFont.load_default()
-    
+        font = ImageFont.load_default(size=font_size)
+
     if width is None:
         width = int(max(img.size) / 500) + 1
-    
+        
+
     if isinstance(colors, str):
         colors = [colors]
-    
+
     for idx, ann in enumerate(annotations):
         bbox = ann.get("bbox", None)
         if bbox is None:
             continue
         category = ann.get('category', 'Object')
-        
+
         # COCO format: [x, y, width, height]
         x, y, w, h = bbox
-        
+
         # Calculate coordinates for rectangle
         top_left = (x, y)
         bottom_right = (x + w, y + h)
-        
+
         # Choose color
         color = colors[idx % len(colors)]
-        
+
         # Draw bounding box
         draw.rectangle([top_left, bottom_right], outline=color, width=width)
-        
+
         # Draw label
         label = f"{category}"
         bbox = draw.textbbox(top_left, label, font=font)
         draw.rectangle(bbox, fill=color)
         draw.text(top_left, label, fill="white", font=font)
-    
+
+    return img
+
+
+def draw_keypoints(img: PILImage,
+                   annotations: List[Dict[str, Any]],
+                   radius: int | None = None,
+                   colors: Union[str, List[str]] = "red") -> PILImage:
+
+    if radius is None:
+        radius = int(max(img.size) / 400) + 1
+
+    if isinstance(colors, str):
+        colors = [colors]
+
+    for idx, ann in enumerate(annotations):
+        keypoints = ann.get("keypoints", None) # [id, x, y, v]
+        print(keypoints)
+        if keypoints is None:
+            continue
+
+        draw = ImageDraw.Draw(img)
+        for kp in keypoints:
+
+            # format: [id, x, y, v]
+            kp_id, x, y, v = kp
+
+            # Draw keypoints
+            color = colors[idx % len(colors)]
+            draw.ellipse([x-radius, y-radius, x+radius, y+radius], fill=color)
+
     return img
 
 
@@ -79,31 +114,35 @@ def plot_switft_dataset(img: Union[torch.Tensor, PILImage], target: Target | Non
         The plotted figure.
     """
     img = to_image(img)
-    
+
     if target is not None:
         labels = target["labels"]
         labels = [f"cls: {label}" for i, label in enumerate(labels)]
         boxes = target["boxes"]
         if target["box_format"] != BoundingBoxFormat.XYXY:
             boxes = box_convert(boxes,
-                                in_fmt=target_box_format_to_enum(target["box_format"]).value.lower(),
+                                in_fmt=target_box_format_to_enum(
+                                    target["box_format"]).value.lower(),
                                 out_fmt="xyxy")
-        boxes = clip_boxes_to_image(boxes, img.shape[-2:]) # type: ignore[call-overload]
-        
+        # type: ignore[call-overload]
+        boxes = clip_boxes_to_image(boxes, img.shape[-2:])
+
         line_width = int(max(img.shape[-2:]) / 500)+1
         font_size = int(max(img.shape[-2:]) / 50)
-        
-        img = draw_bounding_boxes(img, boxes, labels, width=line_width, font_size=font_size, font="DejaVuSans", colors="green")
-    
+
+        img = draw_bounding_boxes(img, boxes, labels, width=line_width,
+                                  font_size=font_size, font="DejaVuSans", colors="green")
+
     fig = plt.figure()
     plt.imshow(img.permute(1, 2, 0).numpy())
-    
+
     return fig
+
 
 def plot_switft_dataset_batch(samples: Tensor,
                               targets: List[Target],
                               samples_unpaded_size: List[List[int]],
-                              width_plots = 2,
+                              width_plots=2,
                               samples_transform: Callable | None = None) -> Figure:
     """
     Plots a batch of images with their corresponding bounding boxes (if provided).
@@ -134,42 +173,45 @@ def plot_switft_dataset_batch(samples: Tensor,
     assert samples.dtype == torch.uint8, "The images must be of type torch.uint8"
 
     bs = samples.shape[0]
-    
+
     plot_grid_h = 1+bs//width_plots if width_plots//bs == 0 else width_plots//bs
     plot_grid_w = width_plots
-    
-    fig = plt.figure(dpi = 500)
-    grid = ImageGrid(fig, 111, # similar to subplot(111)
-                     nrows_ncols=(plot_grid_h, plot_grid_w), # creates 2x2 grid of axes
+
+    fig = plt.figure(dpi=500)
+    grid = ImageGrid(fig, 111,  # similar to subplot(111)
+                     # creates 2x2 grid of axes
+                     nrows_ncols=(plot_grid_h, plot_grid_w),
                      axes_pad=0.05,  # pad between axes in inch.
                      share_all=True,
                      )
-    
+
     for b in range(bs):
-        idx_h, idx_w = b//width_plots, b%width_plots
+        idx_h, idx_w = b//width_plots, b % width_plots
         img = samples[b]
-        
+
         if samples_unpaded_size is not None:
             h, w = samples_unpaded_size[b]
         else:
             h, w = img.shape[-2:]
-        
-        line_width = int(max((h, w)) / 500) # type: ignore[operator]
-        font_size = int(max((h, w)) / 50) # type: ignore[operator]
-        
+
+        line_width = int(max((h, w)) / 500)  # type: ignore[operator]
+        font_size = int(max((h, w)) / 50)  # type: ignore[operator]
+
         if targets is not None:
             labels = targets[b]["labels"]
             labels_str = [f"{l}" for l in labels]
             boxes = targets[b]["boxes"]
             if targets[b]["box_format"] != "XYXY":
                 boxes = box_convert(boxes,
-                                    in_fmt=target_box_format_to_enum(targets[b]["box_format"]).value.lower(),
+                                    in_fmt=target_box_format_to_enum(
+                                        targets[b]["box_format"]).value.lower(),
                                     out_fmt="xyxy")
             if (boxes < 1).all():
-                boxes = boxes * torch.tensor([w, h, w, h]).to(boxes) # (N, 4)
-            img = draw_bounding_boxes(img, boxes, labels=labels_str, colors="green", width=line_width, font_size=font_size, font="DejaVuSans")
-            
+                boxes = boxes * torch.tensor([w, h, w, h]).to(boxes)  # (N, 4)
+            img = draw_bounding_boxes(img, boxes, labels=labels_str, colors="green",
+                                      width=line_width, font_size=font_size, font="DejaVuSans")
+
         grid[b].imshow(img.permute(1, 2, 0).cpu().numpy())
         grid[b].axis("off")
-            
+
     return fig
