@@ -47,12 +47,13 @@ if __name__ == "__main__":
     # )
     
     dataset = FolderDataset(
-        root_dir="/media/jure/ssd/datasets/folder_datasets",
-        datasets_info=[{"name": "SM", "scenes": ["pose_detection_v1"]}],
+        root_dir="/home/jure/datasets/folder_datasets",
+        datasets_info=[{"name": "SM_pose_estimation", "scenes": ["test"]}],
         dataset_schema = [
                 {"field": "image", "dtype": "PIL", "loader": loaders.ImageLoader()},
                 {"field": "image_annotation", "dtype": "json", "loader": loaders.JsonLoader()},
                 {"field": "annotations", "dtype": "json", "loader": loaders.JsonLoader()},
+                {"field": "mask", "dtype": "numpy", "loader": loaders.NumpyLoader()},
             ],
         drop_last=False,
         shuffle=True,
@@ -68,6 +69,13 @@ if __name__ == "__main__":
         
         plt.imshow(image)
         plt.show()
+        
+        # Show mask if available
+        if "mask" in data:
+            mask = data["mask"]
+            plt.imshow(image)
+            plt.imshow(mask, alpha=0.5)
+            plt.show()
         
     exit()
     

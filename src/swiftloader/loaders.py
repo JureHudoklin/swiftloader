@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 from pathlib import Path
 
 from PIL import Image, ImageOps, ImageFile
@@ -62,6 +62,22 @@ class JsonLoader:
         else:
             with open(str(data)+self._extension, "r") as f:
                 return json.load(f)
+
+
+class NumpyLoader():
+    def __init__(self,
+                 parquet: bool = False,
+                 extension: Literal[".npy", ".npz"] = ".npz",
+                 ):
+        self.parquet = parquet
+        self._extension = extension
+        
+    def __call__(self, data) -> Any:
+        if self.parquet:
+            return np.load(data)
+        else:
+            return np.load(str(data)+self._extension)
+
 
 
 def image_loader(data, field: str, dtype: str) -> PILImage:

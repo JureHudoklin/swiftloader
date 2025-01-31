@@ -149,7 +149,7 @@ class DataToFolder():
         if isinstance(data, PILImage):
             data.save(path / f"{entry_name}.jpg")
         elif isinstance(data, np.ndarray):
-            np.save(path / f"{entry_name}.npy", data)
+            np.savez_compressed(path / f"{entry_name}.npz", data)
         elif isinstance(data, torch.Tensor):
             torch.save(data, path / f"{entry_name}.pt")
         elif isinstance(data, dict | list):
