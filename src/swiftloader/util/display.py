@@ -80,7 +80,6 @@ def draw_keypoints(img: PILImage,
 
     for idx, ann in enumerate(annotations):
         keypoints = ann.get("keypoints", None) # [id, x, y, v]
-        print(keypoints)
         if keypoints is None:
             continue
 

@@ -44,7 +44,6 @@ class ImageLoader:
             raise FileNotFoundError(f"Image file not found: {data}")
         
     def __call__(self, data) -> Any:
-        print("Called")
         if self.parquet:
             return self._parquet_loader(data)
         else:
@@ -76,7 +75,13 @@ class NumpyLoader():
         if self.parquet:
             return np.load(data)
         else:
-            return np.load(str(data)+self._extension)
+            if self._extension == ".npz":
+                data = np.load(str(data)+self._extension)
+                arr = data["arr_0"]
+                data.close()
+                return arr
+            else:
+                return np.load(str(data)+self._extension)
 
 
 

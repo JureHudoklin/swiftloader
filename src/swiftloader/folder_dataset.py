@@ -68,6 +68,7 @@ class FolderDataset(Dataset):
             # Get all subfolders in the dataset folder (exclude files)
             scenes = sorted((root_dir / dataset_info["name"]).glob("*"))
             scenes = [scene for scene in scenes if scene.is_dir()]
+            
             if "scenes" in dataset_info:
                 scenes = [scene for scene in scenes if scene.name in dataset_info["scenes"]]
             
