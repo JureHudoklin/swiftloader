@@ -7,7 +7,6 @@ import torchvision.transforms.v2 as T
 from torch.utils.data import DataLoader
 
 from swiftloader import FolderDataset, ParquetDataset
-from swiftloader.task.object_detection import ObjectDetectionDatasetParquet
 from swiftloader import loaders
 from swiftloader.util import DatasetToCoco
 from swiftloader.util.display import draw_bounding_boxes, draw_keypoints
@@ -34,8 +33,8 @@ if __name__ == "__main__":
     ])
 
     dataset = FolderDataset(
-        root_dir="/media/jure/ssd/datasets/folder_datasets",
-        datasets_info=[{"name": "tless", "scenes": ["test_primesense_13"]}],
+        root_dir="/home/jure/datasets/folder_datasets",
+        datasets_info=[{"name": "test", "scenes": ["test1"]}],
         dataset_schema = [
                 {"field": "image", "dtype": "PIL", "loader": loaders.ImageLoader()},
                 {"field": "image_annotation", "dtype": "json", "loader": loaders.JsonLoader()},

@@ -132,7 +132,7 @@ class DataToFolder():
                  dataset_name: str,
                  scene_name: str,
                  save_resolver: Callable | None = None,
-                 ) -> None:
+    ) -> None:
         self.root_dir = Path(root_dir)
         self.dataset_name = dataset_name
         self.scene_name = scene_name
