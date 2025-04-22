@@ -53,8 +53,6 @@ class FolderDataset(Dataset):
 
         logging.info(f"Loaded {len(self.data)} images from {datasets_info} datasets")
         
-        self.fail_save = self.__getitem__(0)
-
     def _check_datasets_exist(self, root_dir: Path, datasets_info: List[DatasetInfo]):
         for dataset_info in datasets_info:
             if not (root_dir / dataset_info["name"]).exists():
