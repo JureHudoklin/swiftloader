@@ -33,14 +33,23 @@ if __name__ == "__main__":
 
     dataset = ByBoxDatasetFolder(
         root_dir="/home/jure/datasets/folder_datasets",
-        datasets_info=[{"name": "SM", "scenes": ["pose_detection_v1"]}],
+        datasets_info=[{"name": "TIM_1", "scenes": ["scene_1_bbox"]}],
+        noise_bbox=[0.05, 0.05, 0.1, 0.1],
     )
-    print(f"Total number of images: {len(dataset)}")
+    
+    dataloader = DataLoader(
+        dataset,
+        batch_size=1,
+        shuffle=False,
+        num_workers=0,
+        collate_fn=lambda x: x,
+    )
+    
     
     i = 0
-    for data in dataset:
-        print(f"Image {i}")
+    for data in dataloader:
         i += 1
+        print(data)
         image = data["image"]
         
         # image = draw_bounding_boxes(image, data["annotations"])
@@ -57,5 +66,6 @@ if __name__ == "__main__":
             plt.imshow(mask, alpha=0.5)
             plt.show()
         
-    exit()
+    print("Finished")
+    exit(0)
 

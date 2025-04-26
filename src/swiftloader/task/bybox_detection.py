@@ -25,6 +25,7 @@ class ByBoxDatasetFolder(FolderDataset):
                 root_dir: str | Path,
                 datasets_info: List[DatasetInfo],
                 format_data: Callable[[dict], Any] | None = None,
+                noise_bbox: list[float] = [0.0, 0.0, 0.0, 0.0],
     ):
         FolderDataset.__init__(
             self,
@@ -32,18 +33,15 @@ class ByBoxDatasetFolder(FolderDataset):
             datasets_info=datasets_info,
             dataset_schema=[{"field": "annotations", "dtype": ".json", "loader": loaders.JsonLoader()},
                             {"field": "image_annotation", "dtype": ".json", "loader": loaders.JsonLoader()},
-                            {"field": "image", "dtype": "PIL", "loader": loaders.ImageLoader()}],
-            format_data=format_data,
+                            {"field": "image", "dtype": "PIL", "loader": loaders.ImageLoader(out_type="pil")}],
+            format_data=None,
         )
+        self.noise_bbox = noise_bbox
+        self._format_data = format_data
         
         self.ann_per_image = self.setup()
         self.ann_cumulative = np.cumsum(self.ann_per_image)
-        
-        print(f"Total number of images: {len(self)}")
-        print(f"Total number of annotations: {np.sum(self.ann_per_image)}")
-        print(f"Number of images per annotation: {self.ann_per_image}")
-        print(f"Number of annotations per image: {self.ann_cumulative}")
-        
+
     def setup(self):
         # get number of annotations for each image
         ann_per_image = np.array([])
@@ -77,8 +75,8 @@ class ByBoxDatasetFolder(FolderDataset):
             img_idx = 0
             ann_idx = 0
         else:
-            img_idx = self.ann_cumulative // idx
-            img_idx = np.argmax(img_idx > 0) + 1
+            img_idx = (self.ann_cumulative-1) // idx
+            img_idx = np.argmax(img_idx > 0)
             
             # Check if image contains any annotations
             ann_per_image_ = self.ann_per_image[img_idx:]
@@ -92,6 +90,10 @@ class ByBoxDatasetFolder(FolderDataset):
             # Calculate annotation index
             ann_idx = idx - self.ann_cumulative[img_idx - 1] if img_idx > 0 else idx
         
+
+        if img_idx >= len(self):
+            raise IndexError(f"Image index {img_idx} is out of bounds for dataset of size {len(self)}.")
+        
         data = super().__getitem__(int(img_idx))
         image = data.get("image")
         annotation = data.get("annotations", [])
@@ -102,10 +104,22 @@ class ByBoxDatasetFolder(FolderDataset):
         
         annotation = annotation[int(ann_idx)]
 
-
         # Crop image to bounding box
         if annotation["bbox"] is not None and image is not None:
             x, y, w, h = annotation["bbox"]
+            
+            if self.noise_bbox is not None:
+                x = int(x + self.noise_bbox[0]*np.random.rand()* w)
+                y = int(y + self.noise_bbox[1]*np.random.rand() * h)
+                w = int(w + self.noise_bbox[2]*np.random.rand() * w)
+                h = int(h + self.noise_bbox[3]*np.random.rand() * h)
+            
+            # Ensure bounding box is within image bounds
+            x = max(0, min(x, image.size[0] - 1))
+            y = max(0, min(y, image.size[1] - 1))
+            w = max(1, min(w, image.size[0] - x))
+            h = max(1, min(h, image.size[1] - y))
+            
             image_crop = image.crop((x, y, x + w, y + h))
         
         
@@ -120,7 +134,6 @@ class ByBoxDatasetFolder(FolderDataset):
             }
         }
         
-        
-        return self.format_data(new_data) if self.format_data is not None else new_data
+        return self._format_data(new_data) if self._format_data is not None else new_data
         
        

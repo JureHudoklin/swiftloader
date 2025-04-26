@@ -11,8 +11,11 @@ import io
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 class ImageLoader:
-    def __init__(self, parquet: bool = False):
+    def __init__(self, 
+                 out_type: Literal["pil", "numpy", "torch"] = "pil",
+                 parquet: bool = False):
         self.parquet = parquet
+        self.out_type = out_type.lower()
         
         self._extensions = [".jpg", ".png"]
         
@@ -43,11 +46,20 @@ class ImageLoader:
                     pass
             raise FileNotFoundError(f"Image file not found: {data}")
         
+    def _to_type(self, data: PILImage) -> Any:
+        if self.out_type == "numpy":
+            return np.array(data)
+        elif self.out_type == "torch":
+            return torch.from_numpy(np.array(data)).permute(2, 0, 1)
+        else:
+            return data
+        
     def __call__(self, data) -> Any:
         if self.parquet:
-            return self._parquet_loader(data)
+            image = self._parquet_loader(data)
         else:
-            return self._file_loader(data)
+            image = self._file_loader(data)
+        return self._to_type(image)
 
 
 class JsonLoader:
