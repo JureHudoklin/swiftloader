@@ -3,12 +3,15 @@ from pathlib import Path
 
 from PIL import Image, ImageOps, ImageFile
 from PIL.Image import Image as PILImage
+import cv2
 import json
 import numpy as np
 import torch
+import torchvision
 import io
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
+
 
 class ImageLoader:
     def __init__(self, 
@@ -24,42 +27,50 @@ class ImageLoader:
     def _parquet_loader(self, data: bytes) -> PILImage:
         with Image.open(io.BytesIO(data)) as img:
             image = img.convert("RGB")
-            image = ImageOps.exif_transpose(image)
+            ImageOps.exif_transpose(image, in_place=True)
         return image
     
     def _file_loader(self, data: str | Path) -> PILImage:
-        try:
-            with Image.open(str(data)+self.file_ext_history) as img:
-                image = img.convert("RGB")
-                image = ImageOps.exif_transpose(image)
-            return image
+        # Check if the path exists with the current file extension
+        # If not, try with the other extensions
+        if isinstance(data, str):
+            data = Path(data)
+            
+        ext = self.file_ext_history
+        path = data.with_suffix(ext)
         
-        except FileNotFoundError:
+        if not data.exists():
+            # If the file does not exist, try with the other extensions
             for ext in self._extensions:
-                try:
-                    with Image.open(str(data)+ext) as img:
-                        image = img.convert("RGB")
-                        image = ImageOps.exif_transpose(image)
-                    self.file_ext_history = ext
-                    return image
-                except FileNotFoundError:
-                    pass
-            raise FileNotFoundError(f"Image file not found: {data}")
+                path = data.with_suffix(ext)
+                if path.exists():
+                    break
+            else:
+                raise FileNotFoundError(f"Image file not found: {data}")
+            
+        # Try to open the image with the current file extension
+        return self._from_type(path)
         
-    def _to_type(self, data: PILImage) -> Any:
+    def _from_type(self, path: str | Path) -> Any:
         if self.out_type == "numpy":
-            return np.array(data)
+            # Use cv2 to open the image
+            return cv2.imread(str(path), cv2.IMREAD_COLOR_RGB)
         elif self.out_type == "torch":
-            return torch.from_numpy(np.array(data)).permute(2, 0, 1)
+            return torchvision.io.decode_image(str(path), mode = torchvision.io.ImageReadMode.RGB)
+        elif self.out_type == "pil":
+            with Image.open(path) as img:
+                image = img.convert("RGB")
+                ImageOps.exif_transpose(image, in_place=True)
+            return image
         else:
-            return data
+            raise ValueError(f"Unsupported output type: {self.out_type}. Supported types are: ['numpy', 'torch', 'pil']")
         
     def __call__(self, data) -> Any:
         if self.parquet:
+            raise NotImplementedError("Parquet loader is not implemented yet.")
             image = self._parquet_loader(data)
         else:
             image = self._file_loader(data)
-        return self._to_type(image)
 
 
 class JsonLoader:
@@ -96,41 +107,3 @@ class NumpyLoader():
                 return np.load(str(data)+self._extension)
 
 
-
-def image_loader(data, field: str, dtype: str) -> PILImage:
-    if dtype == "binary":
-        with Image.open(io.BytesIO(data)) as img:
-            image = img.convert("RGB")
-            image = ImageOps.exif_transpose(image)
-        return image
-    elif dtype in [".jpg", ".jpeg", ".png"]:
-        with Image.open(data) as img:
-            image = img.convert("RGB")
-            image = ImageOps.exif_transpose(image)
-        return image
-    else:
-        raise ValueError(f"Image loader support the following types: ['binary', '.jpg', '.jpeg', '.png']. Got {dtype} instead.")
-
-def json_loader(data, field: str, dtype: str) -> Any:
-    if dtype == "string":
-        return json.loads(data)
-    elif dtype == ".json":
-        with open(data, "r") as f:
-            return json.load(f)
-    else:
-        raise ValueError(f"JSON loader support the following types: ['string', '.json']. Got {dtype} instead.")
-    
-def npy_loader(data: str | Path, field: str, dtype: str) -> Any:
-    if dtype == ".npy":
-        return np.load(data)
-    else:
-        raise ValueError(f"Numpy loader support the following types: ['.npy']. Got {dtype} instead.")
-
-def torch_loader(data: str | Path, field: str, dtype: str) -> Any:
-    if dtype in [".pt", ".pth"]:
-        return torch.load(data)
-    else:
-        raise ValueError(f"Torch loader support the following types: ['.pt', '.pth']. Got {dtype} instead.")
-
-def identity_loader(data: Any, field: str, dtype: str) -> Any:
-    return data

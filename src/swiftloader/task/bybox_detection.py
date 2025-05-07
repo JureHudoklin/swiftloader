@@ -26,6 +26,7 @@ class ByBoxDatasetFolder(FolderDataset):
                 datasets_info: List[DatasetInfo],
                 format_data: Callable[[dict], Any] | None = None,
                 noise_bbox: list[float] = [0.0, 0.0, 0.0, 0.0],
+                crop_to_bbox: bool = True,
     ):
         FolderDataset.__init__(
             self,
@@ -33,10 +34,15 @@ class ByBoxDatasetFolder(FolderDataset):
             datasets_info=datasets_info,
             dataset_schema=[{"field": "annotations", "dtype": ".json", "loader": loaders.JsonLoader()},
                             {"field": "image_annotation", "dtype": ".json", "loader": loaders.JsonLoader()},
-                            {"field": "image", "dtype": "PIL", "loader": loaders.ImageLoader(out_type="pil")}],
+                            {"field": "image", "dtype": "PIL", "loader": loaders.ImageLoader(out_type="pil")},
+                            {"field": "mask_vis", "dtype": "numpy", "loader": loaders.NumpyLoader()},
+                            {"field": "mask_full", "dtype": "numpy", "loader": loaders.NumpyLoader()},
+                            ],
+                
             format_data=None,
         )
         self.noise_bbox = noise_bbox
+        self.crop_to_bbox = crop_to_bbox    
         self._format_data = format_data
         
         self.ann_per_image = self.setup()
@@ -97,7 +103,7 @@ class ByBoxDatasetFolder(FolderDataset):
         data = super().__getitem__(int(img_idx))
         image = data.get("image")
         annotation = data.get("annotations", [])
-        image_data = data.get("image_annotation")
+        image_annotation = data.get("image_annotation")
         
         if ann_idx >= len(annotation):
             raise IndexError(f"Annotation index {ann_idx} is out of bounds for image {img_idx}.")
@@ -105,14 +111,16 @@ class ByBoxDatasetFolder(FolderDataset):
         annotation = annotation[int(ann_idx)]
 
         # Crop image to bounding box
-        if annotation["bbox"] is not None and image is not None:
+        if annotation["bbox"] is not None and self.crop_to_bbox:
             x, y, w, h = annotation["bbox"]
+            annotation["bbox_original"] = [x, y, w, h]
             
             if self.noise_bbox is not None:
-                x = int(x + self.noise_bbox[0]*np.random.rand()* w)
-                y = int(y + self.noise_bbox[1]*np.random.rand() * h)
+                x = int(x + self.noise_bbox[0]*(np.random.rand()-0.5)* w)
+                y = int(y + self.noise_bbox[1]*(np.random.rand()-0.5) * h)
                 w = int(w + self.noise_bbox[2]*np.random.rand() * w)
                 h = int(h + self.noise_bbox[3]*np.random.rand() * h)
+                
             
             # Ensure bounding box is within image bounds
             x = max(0, min(x, image.size[0] - 1))
@@ -120,18 +128,26 @@ class ByBoxDatasetFolder(FolderDataset):
             w = max(1, min(w, image.size[0] - x))
             h = max(1, min(h, image.size[1] - y))
             
+            annotation["bbox"] = [x, y, w, h]
             image_crop = image.crop((x, y, x + w, y + h))
+        else:
+            image_crop = image
+            
+            
+        if image_annotation is None:
+            image_annotation = {}
+        image_annotation["width"] = image_crop.size[0]
+        image_annotation["height"] = image_crop.size[1]
+        image_annotation["original_width"] = image.size[0]
+        image_annotation["original_height"] = image.size[1]
         
         
         new_data = {
             "image": image_crop,
             "annotation": annotation,
-            "image_annotation": {
-                "width": image_crop.size[0],
-                "height": image_crop.size[1],
-                "original_width": image.size[0],
-                "original_height": image.size[1],
-            }
+            "image_annotation": image_annotation,
+            "mask_vis": data.get("mask_vis"),
+            "mask_full": data.get("mask_full"),
         }
         
         return self._format_data(new_data) if self._format_data is not None else new_data
