@@ -71,6 +71,8 @@ class ImageLoader:
             image = self._parquet_loader(data)
         else:
             image = self._file_loader(data)
+        
+        return image
 
 
 class JsonLoader:

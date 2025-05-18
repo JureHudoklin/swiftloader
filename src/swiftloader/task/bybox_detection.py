@@ -15,6 +15,7 @@ from torch import Tensor
 from torchvision import tv_tensors
 from torchvision.ops import box_convert
 from torchvision.transforms.v2 import functional as TF
+import albumentations as A
 
 from swiftloader import FolderDataset, ParquetDataset
 from swiftloader import loaders
@@ -34,10 +35,10 @@ class ByBoxDatasetFolder(FolderDataset):
             datasets_info=datasets_info,
             dataset_schema=[{"field": "annotations", "dtype": ".json", "loader": loaders.JsonLoader()},
                             {"field": "image_annotation", "dtype": ".json", "loader": loaders.JsonLoader()},
-                            {"field": "image", "dtype": "PIL", "loader": loaders.ImageLoader(out_type="pil")},
+                            {"field": "image", "dtype": "PIL", "loader": loaders.ImageLoader(out_type="numpy")},
                             {"field": "mask_vis", "dtype": "numpy", "loader": loaders.NumpyLoader()},
                             {"field": "mask_full", "dtype": "numpy", "loader": loaders.NumpyLoader()},
-                            ],
+            ],
                 
             format_data=None,
         )
@@ -102,6 +103,7 @@ class ByBoxDatasetFolder(FolderDataset):
         
         data = super().__getitem__(int(img_idx))
         image = data.get("image")
+        image_h, image_w = image.shape[0], image.shape[1]
         annotation = data.get("annotations", [])
         image_annotation = data.get("image_annotation")
         
@@ -123,23 +125,25 @@ class ByBoxDatasetFolder(FolderDataset):
                 
             
             # Ensure bounding box is within image bounds
-            x = max(0, min(x, image.size[0] - 1))
-            y = max(0, min(y, image.size[1] - 1))
-            w = max(1, min(w, image.size[0] - x))
-            h = max(1, min(h, image.size[1] - y))
+            x = max(0, min(x, image_w - 1))
+            y = max(0, min(y, image_h - 1))
+            w = max(1, min(w, image_w - x))
+            h = max(1, min(h, image_h - y))
             
             annotation["bbox"] = [x, y, w, h]
-            image_crop = image.crop((x, y, x + w, y + h))
+            image_crop = A.crop(img=image, x_min=x, y_min=y, x_max=x + w, y_max=y + h)
         else:
             image_crop = image
             
             
         if image_annotation is None:
             image_annotation = {}
-        image_annotation["width"] = image_crop.size[0]
-        image_annotation["height"] = image_crop.size[1]
-        image_annotation["original_width"] = image.size[0]
-        image_annotation["original_height"] = image.size[1]
+            
+        image_crop_h, image_crop_w = image_crop.shape[0], image_crop.shape[1]
+        image_annotation["width"] = image_crop_w
+        image_annotation["height"] = image_crop_h
+        image_annotation["original_width"] = image_w
+        image_annotation["original_height"] = image_h
         
         
         new_data = {
