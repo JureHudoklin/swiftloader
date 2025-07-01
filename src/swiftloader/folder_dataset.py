@@ -15,6 +15,9 @@ from torch import Tensor
 from torch.utils.data import Dataset
 
 from .util.type_structs import DatasetInfo
+from .util.misc import save_resolver
+
+logger = logging.getLogger(__name__)
 
 class FolderDataset(Dataset):
     def __init__(
@@ -72,6 +75,11 @@ class FolderDataset(Dataset):
             
             for scene in scenes:
                 data_path = scene / self.dataset_schema[0]["field"]
+                if not data_path.exists():
+                    logging.warning(
+                        f"Data path {data_path} does not exist for dataset {dataset_info['name']} and scene {scene.name}. Skipping."
+                    )
+                    continue
                 
                 files = os.scandir(data_path)
                 data_.extend(
@@ -97,7 +105,7 @@ class FolderDataset(Dataset):
         data = self.data[idx].decode("utf-8")
         dataset, scene, data_name = data.split("/")
         data_name = data_name.split(".")[0]
-        data_info = {"dataset": dataset, "scene": scene, "image_name": data_name}
+        data_info = {"dataset": dataset, "scene": scene, "entry_name": data_name}
 
         paths = []
         for entry_description in self.dataset_schema:
@@ -112,16 +120,63 @@ class FolderDataset(Dataset):
     def __len__(self):
         return len(self.data)
 
-    def __getitem__(self, idx: int):
+    def __getitem__(self, idx: int) -> dict:
         data, data_info = self._get_data(idx)
         
-        data_dict = {}
+        data_dict = {
+            "dataset_idx": idx,
+        }
         for entry in data:
             if not entry["data"].parent.exists():
                 continue
             entry_out = entry["loader"](entry["data"])
             data_dict[entry["field"]] = entry_out
         return self.format_data(data_dict) if self.format_data is not None else data_dict
+    
+    def modify_entry(self,
+                     idx: int,
+                     data_dict: dict,
+                     save_resolver_fn: Callable | None = None,
+                     ) -> None:
+        """Modify an entry in the dataset.
+
+        Parameters
+        ----------
+        idx : int
+            The index of the entry to modify.
+        data_dict : dict
+            A dictionary containing the data to modify the entry with.
+        """
+        paths, data_info = self._get_data(idx)
+        existing_fields = {entry["field"] for entry in paths}
+        
+        if save_resolver_fn is None:
+            save_resolver_fn = save_resolver
+        
+        for field_key, field_value in data_dict.items():
+            # check if the folders exist
+            path=self.root_dir / data_info["dataset"] / data_info["scene"] / field_key
+            if not path.exists():
+                path.mkdir(parents=True, exist_ok=True)
+            
+            if field_key in existing_fields:
+                # Modify existing entry
+                for entry in paths:
+                    if entry["field"] == field_key:
+                        logger.debug(f"Modifying entry {data_info['entry_name']} with value {field_value}.")
+                        save_resolver_fn(
+                            data=field_value,
+                            path=entry["data"].parent,
+                            entry_name=data_info["entry_name"],
+                        )
+                        break
+                    
+            else:
+                save_resolver_fn(
+                    data=field_value,
+                    path=self.root_dir / data_info["dataset"] / data_info["scene"] / field_key,
+                    entry_name=data_info["entry_name"],
+                )
 
 
 class DataToFolder():
@@ -129,7 +184,7 @@ class DataToFolder():
                  root_dir: str | Path,
                  dataset_name: str,
                  scene_name: str,
-                 save_resolver: Callable | None = None,
+                 save_resolver_fn: Callable | None = None,
     ) -> None:
         self.root_dir = Path(root_dir)
         self.dataset_name = dataset_name
@@ -137,40 +192,25 @@ class DataToFolder():
         
         self._count = 0
         
-        if save_resolver is None:
-            save_resolver = self._save_resolver
-        
-    def _save_resolver(self,
-                       data: Any,
-                       path: Path,
-                       entry_name: str,
-                       ) -> None:
-        if isinstance(data, PILImage):
-            data.save(path / f"{entry_name}.jpg")
-        elif isinstance(data, np.ndarray):
-            np.savez_compressed(path / f"{entry_name}.npz", data)
-        elif isinstance(data, torch.Tensor):
-            torch.save(data, path / f"{entry_name}.pt")
-        elif isinstance(data, dict | list):
-            with open(path / f"{entry_name}.json", "w") as f:
-                json.dump(data, f)
-        else:
-            print(data)
-            raise ValueError(f"Unsupported data type: {type(data)}")
+        if save_resolver_fn is None:
+            save_resolver_fn = save_resolver 
+            
+        self.save_resolver_fn = save_resolver_fn
         
     def get_count(self):
         return self._count
             
-    def add_entry(self, data_dict):
+    def add_entry(self, data_dict, entry_name: Optional[str] = None):
         scene_dir = self.root_dir / self.dataset_name / self.scene_name
         scene_dir.mkdir(parents=True, exist_ok=True)
         
-        entry_name = str(int(time.time() * 1e6))
+        if entry_name is None:
+            entry_name = str(int(time.time() * 1e6))
         
         for key, value in data_dict.items():
             # Make a directory for the key
             (scene_dir / key).mkdir(parents=True, exist_ok=True)
                         
-            self._save_resolver(value, scene_dir / key, entry_name)
+            self.save_resolver_fn(value, scene_dir / key, entry_name)
             
         self._count += 1
