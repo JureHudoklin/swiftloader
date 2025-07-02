@@ -43,7 +43,6 @@ def draw_bounding_boxes(img: PILImage,
         bbox = ann.get("bbox", None)
         if bbox is None:
             continue
-        category = ann.get('category', 'Object')
 
         # COCO format: [x, y, width, height]
         x, y, w, h = bbox
@@ -57,9 +56,10 @@ def draw_bounding_boxes(img: PILImage,
 
         # Draw bounding box
         draw.rectangle([top_left, bottom_right], outline=color, width=width)
+        attributes = {k: v for k, v in ann.items() if type(v)==int}
 
         # Draw label
-        label = f"{category}"
+        label = f"{ann['category_id']} - {attributes['damaged']}"
         bbox = draw.textbbox(top_left, label, font=font)
         draw.rectangle(bbox, fill=color)
         draw.text(top_left, label, fill="white", font=font)

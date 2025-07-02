@@ -34,12 +34,12 @@ if __name__ == "__main__":
 
     dataset = FolderDataset(
         root_dir="/home/jure/datasets/folder_datasets",
-        datasets_info=[{"name": "test", "scenes": ["test1"]}],
+        datasets_info=[{"name": "TIM_1_Zaliti", "scenes": ["TIM_1_Zaliti_scene_4"]}],
         dataset_schema = [
+                {"field": "mask_vis", "dtype": "numpy", "loader": loaders.NumpyLoader()},
                 {"field": "image", "dtype": "PIL", "loader": loaders.ImageLoader()},
                 {"field": "image_annotation", "dtype": "json", "loader": loaders.JsonLoader()},
                 {"field": "annotations", "dtype": "json", "loader": loaders.JsonLoader()},
-                {"field": "mask_full", "dtype": "numpy", "loader": loaders.NumpyLoader()},
             ],
         drop_last=False,
         shuffle=True,
@@ -56,8 +56,8 @@ if __name__ == "__main__":
         plt.show()
         
         # Show mask if available
-        if "mask_full" in data:
-            mask = data["mask_full"]
+        if "mask_vis" in data:
+            mask = data["mask_vis"]
             print(mask)
             plt.imshow(image)
             plt.imshow(mask, alpha=0.5)

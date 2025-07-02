@@ -33,11 +33,12 @@ class ByBoxDatasetFolder(FolderDataset):
             self,
             root_dir=root_dir,
             datasets_info=datasets_info,
-            dataset_schema=[{"field": "annotations", "dtype": ".json", "loader": loaders.JsonLoader()},
-                            {"field": "image_annotation", "dtype": ".json", "loader": loaders.JsonLoader()},
-                            {"field": "image", "dtype": "PIL", "loader": loaders.ImageLoader(out_type="numpy")},
-                            {"field": "mask_vis", "dtype": "numpy", "loader": loaders.NumpyLoader()},
-                            {"field": "mask_full", "dtype": "numpy", "loader": loaders.NumpyLoader()},
+            dataset_schema=[
+                {"field": "mask_vis", "dtype": "numpy", "loader": loaders.NumpyLoader()},
+                {"field": "annotations", "dtype": ".json", "loader": loaders.JsonLoader()},
+                {"field": "image_annotation", "dtype": ".json", "loader": loaders.JsonLoader()},
+                {"field": "image", "dtype": "PIL", "loader": loaders.ImageLoader(out_type="numpy")},
+                {"field": "mask_full", "dtype": "numpy", "loader": loaders.NumpyLoader()},
             ],
                 
             format_data=None,
