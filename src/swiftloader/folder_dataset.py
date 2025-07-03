@@ -177,6 +177,50 @@ class FolderDataset(Dataset):
                     path=self.root_dir / data_info["dataset"] / data_info["scene"] / field_key,
                     entry_name=data_info["entry_name"],
                 )
+                
+    def split(
+        self,
+        split_ratio: float = 0.8,
+        shuffle: bool = True,
+    ) -> Tuple["FolderDataset", "FolderDataset"]:
+        """Split the dataset into two parts.
+
+        Parameters
+        ----------
+        split_ratio : float, optional
+            The ratio of the first part of the split, by default 0.8.
+        shuffle : bool, optional
+            Whether to shuffle the dataset before splitting, by default True.
+
+        Returns
+        -------
+        Tuple[FolderDataset, FolderDataset]
+            The two parts of the split dataset.
+        """
+        if shuffle:
+            np.random.shuffle(self.data)
+        
+        split_idx = int(len(self.data) * split_ratio)
+        data1 = self.data[:split_idx]
+        data2 = self.data[split_idx:]
+        
+        dataset1 = FolderDataset(
+            root_dir=self.root_dir,
+            datasets_info=self.datasets_info,
+            dataset_schema=self.dataset_schema,
+            format_data=self.format_data,
+        )
+        dataset1.data = data1
+        
+        dataset2 = FolderDataset(
+            root_dir=self.root_dir,
+            datasets_info=self.datasets_info,
+            dataset_schema=self.dataset_schema,
+            format_data=self.format_data,
+        )
+        dataset2.data = data2
+        
+        return dataset1, dataset2
 
 
 class DataToFolder():
