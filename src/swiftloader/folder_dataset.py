@@ -71,9 +71,22 @@ class FolderDataset(Dataset):
                 scenes = [scene for scene in scenes if scene.name in dataset_info["scenes"]]
             
             for scene in scenes:
-                data_path = scene / self.dataset_schema[0]["field"]
-                
-                files = os.scandir(data_path)
+                for i in range(len(self.dataset_schema)):
+                    try:
+                        data_path = scene / self.dataset_schema[i]["field"]
+
+                        files = os.scandir(data_path)
+                        break
+
+                    except FileNotFoundError:
+                        logging.warning(
+                        f"Dataset {dataset_info['name']} scene {scene.name} does not contain the expected data folder: {data_path}. Skipping."
+                    )
+                    continue
+                else:
+                    raise FileNotFoundError(
+                        f"Dataset {dataset_info['name']} scene {scene.name} does not contain any of the expected data folders: {[entry['field'] for entry in self.dataset_schema]}."
+                    )
                 data_.extend(
                     [
                         f"{dataset_info['name']}/{scene.name}/{file.name}"
