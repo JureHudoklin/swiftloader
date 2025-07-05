@@ -2,8 +2,8 @@ import os
 import sys
 from pathlib import Path
 import json
-from PIL import Image, ImageOps
-import PIL.Image as PILImage
+from PIL import Image, ImageOps, ImageFile
+from PIL.Image import Image as PILImage
 import numpy as np
 import torch
 
@@ -11,14 +11,34 @@ from torch import Tensor
 from typing import List, Any
 
 
+def save_resolver(
+    data: Any,
+    path: Path,
+    entry_name: str,
+) -> None:
+    if isinstance(data, PILImage):
+        data.save(path / f"{entry_name}.jpg")
+    elif isinstance(data, np.ndarray):
+        np.savez_compressed(path / f"{entry_name}.npz", data)
+    elif isinstance(data, torch.Tensor):
+        torch.save(data, path / f"{entry_name}.pt")
+    elif isinstance(data, dict | list):
+        with open(path / f"{entry_name}.json", "w") as f:
+            json.dump(data, f)
+    else:
+        print(data)
+        raise ValueError(f"Unsupported data type: {type(data)}")
+
+
 class HiddenPrints:
     def __enter__(self):
         self._original_stdout = sys.stdout
-        sys.stdout = open(os.devnull, 'w')
+        sys.stdout = open(os.devnull, "w")
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         sys.stdout.close()
         sys.stdout = self._original_stdout
+
 
 def get_bbox_from_mask(
     alpha_mask: Tensor,

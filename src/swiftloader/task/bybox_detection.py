@@ -21,27 +21,15 @@ from swiftloader import FolderDataset, ParquetDataset
 from swiftloader import loaders
 from swiftloader.util.type_structs import DatasetInfo
 
-class ByBoxDatasetFolder(FolderDataset):
+class ByBoxDatasetFolder():
     def __init__(self,
-                root_dir: str | Path,
-                datasets_info: List[DatasetInfo],
+                dataset: FolderDataset,
                 format_data: Callable[[dict], Any] | None = None,
+                *,
                 noise_bbox: list[float] = [0.0, 0.0, 0.0, 0.0],
                 crop_to_bbox: bool = True,
     ):
-        FolderDataset.__init__(
-            self,
-            root_dir=root_dir,
-            datasets_info=datasets_info,
-            dataset_schema=[{"field": "annotations", "dtype": ".json", "loader": loaders.JsonLoader()},
-                            {"field": "image_annotation", "dtype": ".json", "loader": loaders.JsonLoader()},
-                            {"field": "image", "dtype": "PIL", "loader": loaders.ImageLoader(out_type="numpy")},
-                            {"field": "mask_vis", "dtype": "numpy", "loader": loaders.NumpyLoader()},
-                            {"field": "mask_full", "dtype": "numpy", "loader": loaders.NumpyLoader()},
-            ],
-                
-            format_data=None,
-        )
+        self._dataset = dataset
         self.noise_bbox = noise_bbox
         self.crop_to_bbox = crop_to_bbox    
         self._format_data = format_data
@@ -52,7 +40,7 @@ class ByBoxDatasetFolder(FolderDataset):
     def setup(self):
         # get number of annotations for each image
         ann_per_image = np.array([])
-        for i in range(super().__len__()):
+        for i in range(self._dataset.__len__()):
             annotations = self.get_image_annotations(i)
             if annotations is None:
                 ann_per_image = np.append(ann_per_image, 0)
@@ -63,7 +51,7 @@ class ByBoxDatasetFolder(FolderDataset):
         return ann_per_image
 
     def get_image_annotations(self, idx: int):
-        paths, data_info = self._get_data(idx)
+        paths, data_info = self._dataset._get_data(idx)
             
         annotation_path = [path for path in paths if path["field"] == "annotations"][0]
         if not annotation_path["data"].parent.exists():
@@ -100,8 +88,8 @@ class ByBoxDatasetFolder(FolderDataset):
 
         if img_idx >= len(self):
             raise IndexError(f"Image index {img_idx} is out of bounds for dataset of size {len(self)}.")
-        
-        data = super().__getitem__(int(img_idx))
+
+        data = self._dataset[int(img_idx)]
         image = data.get("image")
         image_h, image_w = image.shape[0], image.shape[1]
         annotation = data.get("annotations", [])
@@ -150,10 +138,13 @@ class ByBoxDatasetFolder(FolderDataset):
             "image": image_crop,
             "annotation": annotation,
             "image_annotation": image_annotation,
-            "mask_vis": data.get("mask_vis"),
-            "mask_full": data.get("mask_full"),
         }
         
+        # Add any other fields from the original data
+        for key, value in data.items():
+            if key not in new_data:
+                new_data[key] = value
+                
         return self._format_data(new_data) if self._format_data is not None else new_data
         
        
