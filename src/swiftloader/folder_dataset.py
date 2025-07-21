@@ -58,6 +58,7 @@ class FolderDataset(Dataset):
         
     def _check_datasets_exist(self, root_dir: Path, datasets_info: List[DatasetInfo]):
         for dataset_info in datasets_info:
+            print(f"Checking dataset {dataset_info['name']} in {root_dir}")
             if not (root_dir / dataset_info["name"]).exists():
                 raise FileNotFoundError(
                     f"Dataset {dataset_info['name']} could not be found in {root_dir}"

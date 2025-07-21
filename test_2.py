@@ -7,7 +7,6 @@ import torchvision.transforms.v2 as T
 from torch.utils.data import DataLoader
 
 from swiftloader import FolderDataset, ParquetDataset
-from swiftloader.task.object_detection import ObjectDetectionDatasetParquet
 from swiftloader import loaders
 from swiftloader.util import DatasetToCoco, DatasetToYolo
 from swiftloader.util.display import draw_bounding_boxes
@@ -17,75 +16,35 @@ def collate_fn(batch):
     return batch
 
 if __name__ == "__main__":
-    
-    # Transforms
-    base_transforms = T.Resize((512, 512))
-    input_transforms = T.Compose([
-        T.ToImage(),
-        T.ToDtype(torch.float32, scale=True),
-        T.Normalize(
-            mean=[0.485, 0.456, 0.406], 
-            std=[0.229, 0.224, 0.225]
-        ),
-        ]
-    )
-    output_transforms = T.Compose([
-        T.Normalize(
-            mean=[-0.485 / 0.229, -0.456 / 0.224, -0.406 / 0.225], 
-            std=[1 / 0.229, 1 / 0.224, 1 / 0.225]
-        ),
-        T.ToDtype(torch.uint8, scale=True),
-    ])
-    
-    # dataset = ParquetDataset(
-    #     root_dir="/media/jure/ssd/datasets/parquet_datasets",
-    #     datasets_info=[{"name": "industrial_objects", "scenes": ["train_v3"]}],
-    #     dataset_schema = [
-    #             {"field": "image", "dtype": "binary", "loader": loaders.image_loader},
-    #             {"field": "image_annotation", "dtype": "string", "loader": loaders.json_loader},
-    #             {"field": "annotations", "dtype": "string", "loader": loaders.json_loader},
-    #         ],
-    #     batch_size=1,
-    #     drop_last=False,
-    #     shuffle=True,
-    # )
-    
-    dataset = FolderDataset(
-        root_dir="/media/jure/ssd/datasets/folder_datasets",
-        datasets_info=[{"name": "SM_object_detection", "scenes": ["test3"]}], # "test", "test1", "test2", "SM_train_real", "SM_val_real"
-        dataset_schema = [
-                {"field": "image", "dtype": ".jpg", "loader": loaders.image_loader},
-                {"field": "image_annotation", "dtype": ".json", "loader": loaders.json_loader},
-                {"field": "annotations", "dtype": ".json", "loader": loaders.json_loader},
-            ],
-        drop_last=False,
-        shuffle=True,
-    )
-    dataloader = DataLoader(
-        dataset,
-        batch_size=1,
-        num_workers=0,
-        shuffle=True,
-        collate_fn=collate_fn,
-    )
-    
-    
-    # for data in dataloader:
-    #     image = data["image"]
-        
-    #     image = draw_bounding_boxes(image, data["annotations"])
-        
-    #     plt.imshow(image)
-    #     plt.show()
-        
-    
-    ds_to_coco = DatasetToYolo(
-        dataset=dataloader,
-        save_dir="/media/jure/ssd/datasets/yolo_datasets",
-        dataset_name="sm_object_detection3",
-        split_ratio=[1.0, 0.0, 0.0]
-    )
-    
-    ds_to_coco.to_yolo_object_detection()
 
     
+    dataset = FolderDataset(
+        root_dir="/home/jure/datasets/folder_datasets",
+        datasets_info=[{"name": "TIM_1_Zaliti", "scenes": ["TIM_1_Zaliti_scene_4"]}], # "test", "test1", "test2", "SM_train_real", "SM_val_real"
+        dataset_schema = [
+                {"field": "image", "dtype": ".jpg", "loader": loaders.ImageLoader()},
+                {"field": "image_annotation", "dtype": ".json", "loader": loaders.JsonLoader()},
+                {"field": "annotations", "dtype": ".json", "loader": loaders.JsonLoader()},
+                {"field": "mask_vis", "dtype": "numpy", "loader": loaders.NumpyLoader()},
+            ],
+    )
+
+    
+    
+    for data in dataset:
+        
+        annotations = data["annotations"]
+        dataset_idx = data["dataset_idx"]
+        
+        
+        new_annotations = []
+        
+        for i, annotation in enumerate(annotations):
+            annotation["mask_idx"] = i
+            new_annotations.append(annotation)
+            
+        dataset.modify_entry(
+            idx = dataset_idx,
+            data_dict={
+                "annotations": new_annotations}
+        )

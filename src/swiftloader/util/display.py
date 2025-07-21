@@ -59,7 +59,7 @@ def draw_bounding_boxes(img: PILImage,
         attributes = {k: v for k, v in ann.items() if type(v)==int}
 
         # Draw label
-        label = f"{ann['category_id']} - {attributes['damaged']}"
+        label = f"{ann['category_id']}"
         bbox = draw.textbbox(top_left, label, font=font)
         draw.rectangle(bbox, fill=color)
         draw.text(top_left, label, fill="white", font=font)

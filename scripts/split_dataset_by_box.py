@@ -26,10 +26,10 @@ if __name__ == "__main__":
         root_dir=root_dir,
         datasets_info=datasets_info, # type: ignore
         dataset_schema = [
+                {"field": "mask_vis", "dtype": "numpy", "loader": loaders.NumpyLoader()},
                 {"field": "image", "dtype": "PIL", "loader": loaders.ImageLoader()},
                 {"field": "image_annotation", "dtype": "json", "loader": loaders.JsonLoader()},
                 {"field": "annotations", "dtype": "json", "loader": loaders.JsonLoader()},
-                {"field": "mask_full", "dtype": "numpy", "loader": loaders.NumpyLoader()},
             ],
         drop_last=False,
         shuffle=True,

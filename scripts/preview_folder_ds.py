@@ -34,12 +34,12 @@ if __name__ == "__main__":
 
     dataset = FolderDataset(
         root_dir="/home/jure/datasets/folder_datasets",
-        datasets_info=[{"name": "TIM_1_Zaliti", "scenes": ["TIM_1_Zaliti_scene_4"]}],
+        datasets_info=[{"name": "SM_object_detection", "scenes": ["SM_scene_1", "SM_scene_2"]}],
         dataset_schema = [
-                {"field": "mask_vis", "dtype": "numpy", "loader": loaders.NumpyLoader()},
-                {"field": "image", "dtype": "PIL", "loader": loaders.ImageLoader()},
-                {"field": "image_annotation", "dtype": "json", "loader": loaders.JsonLoader()},
                 {"field": "annotations", "dtype": "json", "loader": loaders.JsonLoader()},
+                {"field": "image", "dtype": "PIL", "loader": loaders.ImageLoader()},
+                {"field": "mask_vis", "dtype": "numpy", "loader": loaders.NumpyLoader()},
+                {"field": "image_annotation", "dtype": "json", "loader": loaders.JsonLoader()},
             ],
         drop_last=False,
         shuffle=True,
@@ -63,5 +63,4 @@ if __name__ == "__main__":
             plt.imshow(mask, alpha=0.5)
             plt.show()
         
-    exit()
 

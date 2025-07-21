@@ -37,6 +37,11 @@ if __name__ == "__main__":
         root_dir="/home/jure/datasets/folder_datasets",
         datasets_info=[{"name": "TIM_1_Zaliti", "scenes": ["TIM_1_Zaliti_scene_4"]}],
         # noise_bbox=[0.05, 0.05, 0.1, 0.1],
+        dataset_schema=[
+            {"field": "annotations", "dtype": ".json", "loader": loaders.JsonLoader()},
+            {"field": "image_annotation", "dtype": ".json", "loader": loaders.JsonLoader()},
+            {"field": "image", "dtype": "PIL", "loader": loaders.ImageLoader(out_type="numpy")},
+        ],
     )
     
     # dataloader = DataLoader(
@@ -63,35 +68,38 @@ if __name__ == "__main__":
         i += 1
         image = data["image"] # numpy image
         bbox = data["annotation"]["bbox"]
-        
+        if data["annotation"]["damaged"] > 1:
+            print(data["annotation"]["damaged"])
+            print(data["image_annotation"])
+
         # Save image to path (if damaged save under bad else good)
-        damaged = data["annotation"]["damaged"]
-        if damaged:
-            save_path = path_bad / f"{i:04d}.png"
-        else:
-            save_path = path_good / f"{i:04d}.png"
+        # # damaged = data["annotation"]["damaged"]
+        # # if damaged:
+        # #     save_path = path_bad / f"{i:04d}.png"
+        # # else:
+        # #     save_path = path_good / f"{i:04d}.png"
             
-        image_pil = Image.fromarray(image)
-        image_pil.save(save_path)
+        # # image_pil = Image.fromarray(image)
+        # # image_pil.save(save_path)
         
-    #     x, y, w, h = bbox
+        x, y, w, h = bbox
 
-    #     # Crop mask if available
-    #     if "mask_vis" in data:
-    #         mask = data["mask_vis"]
-    #         mask = mask[y:y+h, x:x+w]
-    #         data["mask_vis"] = mask
+        # Crop mask if available
+        if "mask_vis" in data:
+            mask = data["mask_vis"]
+            mask = mask[y:y+h, x:x+w]
+            data["mask_vis"] = mask
         
 
-    #     # plt.imshow(image)
-    #     # plt.show()
+        # plt.imshow(image)
+        # plt.show()
         
-    #     # Show mask if available
-    #     plt.imshow(image)
-    #     plt.imshow(data["mask_vis"], alpha=0.5)
-    #     plt.title(f"Image {i} - cavity: {data['annotation']['cavity']} - damaged: {data['annotation']['damaged']}")
-    #     plt.show()
+        # Show mask if available
+        plt.imshow(image)
+        # plt.imshow(data["mask_vis"], alpha=0.5)
+        plt.title(f"Image {i} - cavity: {data['annotation']['cavity']} - damaged: {data['annotation']['damaged']}")
+        # plt.show()
         
-    # print("Finished")
-    # exit(0)
+    print("Finished")
+    exit(0)
 
