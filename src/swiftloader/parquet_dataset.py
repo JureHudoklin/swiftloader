@@ -1,18 +1,17 @@
-
 import io
 import logging
 import random
 import copy
+import json
 from dataclasses import dataclass
 import numpy as np
 from PIL import Image
 from PIL.Image import Image as PILImage
-from typing import List, Callable, Any, Tuple, Dict, Literal, Sequence
+from typing import List, Callable, Any, Tuple, Dict, Literal, Sequence, Optional
 from pathlib import Path
 
-from torch.utils.data import IterableDataset, get_worker_info
+from torch.utils.data import Dataset
 
-import fastparquet as fp
 import pyarrow.parquet as pq
 import pyarrow as pa
 import pandas as pd
@@ -35,42 +34,57 @@ class WorkerInfo:
     num_workers: int
 
 
-class ParquetDataset(IterableDataset):
+class ParquetDataset(Dataset):
     def __init__(self,
                  root_dir: str | Path,
                  datasets_info: List[DatasetInfo],
-                 dataset_schema: List[Dict[Literal["field", "dtype", "loader"], Any]],
-                 batch_size: int,
                  format_data: Callable[[dict], Any] | None = None,
-                 batch_format_data: Callable[[List[dict]], List[dict]] | None = None,
-                 drop_last: bool = False,
-                 shuffle: bool = True,
                  *args,
                  **kwargs
-                 ) -> None:
+    ) -> None:
         
         self.root_dir = root_dir if isinstance(root_dir, Path) else Path(root_dir)
         self.datasets_info = datasets_info
-        self.dataset_schema = dataset_schema
-        self.batch_size = batch_size
-        self.drop_last = drop_last
-        self.shuffle = shuffle
         
         if format_data is None:
             format_data = self._format_data
         self.format_data = format_data
-        
-        if batch_format_data is None:
-            batch_format_data = self._batch_format_data
-        self.batch_format_data = batch_format_data
 
-        self.datasets = []
+        self.pq_datasets: List[pq.ParquetDataset] = []
         for dataset_info in self.datasets_info:
             name = dataset_info["name"]
             for scene in dataset_info["scenes"]:
-                self.datasets.append(self._load_dataset(self.root_dir, name, scene))
-                
-    def _load_dataset(self, root_dir: Path, name: str, scene: str) -> fp.ParquetFile:
+                self.pq_datasets.append(self._load_dataset(self.root_dir, name, scene))
+        
+        if not self.pq_datasets:
+            raise ValueError("No Parquet datasets found at the specified locations.")
+
+        self.schema = self.pq_datasets[0].schema
+        
+        # --- Caching and Indexing ---
+        # Initialize cache with a structure that satisfies type checkers
+        self._cache: Dict[str, Any] = {"key": (-1, -1), "table": pa.Table.from_pydict({})}
+        self._build_index_map()
+
+    def _build_index_map(self):
+        """
+        Builds a memory-efficient NumPy structured array for quickly finding the location of any item.
+        This is crucial for performance and multi-worker safety.
+        """
+        map_entries = []
+        self._length = 0
+        for ds_idx, ds in enumerate(self.pq_datasets):
+            for frag_idx, fragment in enumerate(ds.fragments):
+                for rg_idx in range(fragment.num_row_groups):
+                    num_rows_in_group = fragment.metadata.row_group(rg_idx).num_rows
+                    map_entries.append((ds_idx, frag_idx, rg_idx, self._length, self._length + num_rows_in_group))
+                    self._length += num_rows_in_group
+        
+        # Define the structured data type
+        dtype = [('ds_idx', 'i4'), ('frag_idx', 'i4'), ('rg_idx', 'i4'), ('start_pos', 'i8'), ('end_pos', 'i8')]
+        self.index_map = np.array(map_entries, dtype=dtype)
+        
+    def _load_dataset(self, root_dir: Path, name: str, scene: str) -> pq.ParquetDataset:
         """Load a Parquet dataset.
 
         Parameters
@@ -92,28 +106,11 @@ class ParquetDataset(IterableDataset):
         FileNotFoundError
             If the specified directory does not exist.
         """
-        path = str(root_dir / name / scene)
-        if not Path(path).exists():
+        path = root_dir / name / scene
+        if not path.exists():
             raise FileNotFoundError(f"Directory {path} does not exist.")
-        dataset = fp.ParquetFile(path)
+        dataset = pq.ParquetDataset(path)
         return dataset
-    
-    def _batch_format_data(self, data: List[dict]) -> List[dict]:
-        """ A dummy function for formatting a whole batch of data.
-        It applies the format_data function to each entry in the batch.
-        It is recommended to provide a function with more efficient implementation.
-
-        Parameters
-        ----------
-        data : List[dict]
-
-        Returns
-        -------
-        List[dict]
-            The formatted data.
-        """
-        data_out = map(lambda entry: self.format_data(entry), data)
-        return list(data_out)
         
     def _format_data(self, data: dict) -> dict:
         """ A dummy function for formatting a single entry of data.
@@ -129,120 +126,108 @@ class ParquetDataset(IterableDataset):
         """
         return data
     
-    def _load_data(self, data: List[dict]) -> Sequence[dict]:
-        """ Using the dataset schema, load the data from the parquet file.
-
-        Parameters
-        ----------
-        data : List[dict]
-            Raw data from the parquet file.
-
-        Returns
-        -------
-        Sequence[dict]
-            The data formatted according to the dataset schema.
-        """
-        data = copy.deepcopy(data)
-        def format_entry(entry):
-            for schema in self.dataset_schema:
-                if entry.get(schema["field"]) is not None:
-                    entry[schema["field"]] = schema["loader"](entry[schema["field"]], schema["field"], schema["dtype"])
-                else:
-                    continue
-            return entry
-        
-        data = map(lambda entry: format_entry(entry), data) # type: ignore
-        return data
-    
-    def __len__(self):
-        total_len = sum([dataset.count() for dataset in self.datasets])
-        return total_len // self.batch_size if self.drop_last else -(-total_len // self.batch_size)
-    
-    def __iter__(self):
-        ds_num_row_groups = [len(dataset.row_groups) for dataset in self.datasets]
-        worker_info = get_worker_info()
-
-        # Only divide up batches when using multiple worker processe
-        worker_load_info = []
-        for i, num_row_groups in enumerate(ds_num_row_groups):
-            if worker_info != None:
-                worker_load = num_row_groups // worker_info.num_workers
-
-                # If more workers than batches exist, some won't be used
-                if worker_load == 0:
-                    if worker_info.id < num_row_groups:
-                        start = worker_info.id
-                        end = worker_info.id + 1
-                    else: 
-                        start = 0
-                        end = 0
-                else:
-                    start = worker_load * worker_info.id
-                    end = min(start + worker_load, num_row_groups)
-
-            else: 
-                start = 0
-                end = num_row_groups
-            worker_load_info.append({"dataset": i, "start": start, "end": end, "idx": 0, "load": np.arange(start, end)})
-
-        cache = []
-        if self.shuffle:
-            for i in range(len(worker_load_info)):
-                worker_load_info[i]["load"] = np.random.permutation(worker_load_info[i]["load"])
-       
-        while True:
-            if len(cache) >= self.batch_size:
-                data = cache[:self.batch_size]
-                cache = cache[self.batch_size:]
-                yield self.batch_format_data(self._load_data(data)) # type: ignore
+    def _deserialize_entry(self, entry: Dict[str, Any]) -> Dict[str, Any]:
+        """Deserializes a single entry from a Parquet file using schema metadata."""
+        deserialized_entry = {}
+        for field_name, value in entry.items():
+            if value is None:
+                deserialized_entry[field_name] = None
                 continue
 
-            for wli in worker_load_info:
-                if wli["idx"] >= (wli["end"] - wli["start"]):
-                    worker_load_info.remove(wli)
+            field = self.schema.field(field_name)
+            logical_type = field.metadata.get(b'logical_type') if field.metadata else None
 
-            if len(worker_load_info) == 0:
-                if len(cache) > 0:
-                    yield self.batch_format_data(self._load_data(data)) # type: ignore
-                break
-            
-            if self.shuffle:
-                wli = random.choice(worker_load_info)
+            if logical_type == b'image' or field_name == "image":
+                deserialized_entry[field_name] = Image.open(io.BytesIO(value))
+            elif logical_type == b'numpy':
+                deserialized_entry[field_name] = np.load(io.BytesIO(value))
+            elif logical_type == b'json' or field_name == "annotations" or field_name == "image_annotation":
+                deserialized_entry[field_name] = json.loads(value)
             else:
-                wli = worker_load_info[0]
+                deserialized_entry[field_name] = value
                 
-            batch_i = wli["load"][wli["idx"]]
-            batch = self.datasets[wli["dataset"]][batch_i]
+        return deserialized_entry
 
-            batch = batch.to_pandas()
-            # Convert to list of dictionaries
-            batch = batch.to_dict(orient='records')
-            cache.extend(batch)
-            if self.shuffle:
-                random.shuffle(cache)
-            wli["idx"] += 1
+    def __len__(self):
+        return self._length
+    
+    def __getitem__(self, idx: int) -> dict:
+        if idx < 0:
+            idx = self._length + idx
+        if not 0 <= idx < self._length:
+            raise IndexError(f"Index {idx} is out of range for dataset with length {self._length}")
 
+        # Find the correct row group using a fast, vectorized NumPy query
+        map_entry = self.index_map[(self.index_map['start_pos'] <= idx) & (idx < self.index_map['end_pos'])][0]
+        ds_idx, frag_idx, rg_idx = map_entry["ds_idx"], map_entry["frag_idx"], map_entry["rg_idx"]
+        
+        # Use the cache to avoid re-reading the same row group
+        cache_key = (ds_idx, frag_idx, rg_idx)
+        if self._cache["key"] != cache_key:
+            # Cache miss: read the new row group and update the cache
+            print(f"Updating cache for dataset {ds_idx}, fragment {frag_idx}, row group {rg_idx}")
+            fragment = self.pq_datasets[ds_idx].fragments[frag_idx]
+            table = fragment.to_table(columns=self.schema.names)
+            self._cache["key"] = cache_key
+            self._cache["table"] = table
+        
+        # Get the specific row from the cached table
+        local_idx = idx - map_entry["start_pos"]
+        row = self._cache["table"].slice(local_idx, 1).to_pydict()
+        
+        # Convert list-of-values to value-per-key and deserialize
+        entry = {k: v[0] for k, v in row.items()}
+        deserialized_entry = self._deserialize_entry(entry)
+        deserialized_entry["dataset_idx"] = idx
+        return self.format_data(deserialized_entry)
 
 
 class DataToParquet():
     def __init__(self,
                  root_dir: str | Path,
                  dataset_info: DatasetInfo,
-                 schema: pa.Schema,
                  entry_per_file: int = 10000,
+                 row_group_size: int = 256
                  ) -> None:
         self.root_dir = Path(root_dir)
         self.dataset_info = dataset_info
-        self.schema = schema
         self.entry_per_file = entry_per_file
+        self.row_group_size = row_group_size
         
+        self.schema: Optional[pa.Schema] = None
         self.data = []
-        
+
+    def _create_schema(self, data_dict: dict):
+        """Creates a pyarrow schema from a data dictionary, embedding logical types in metadata."""
+        fields = []
+        for key, value in data_dict.items():
+            if isinstance(value, PILImage):
+                meta = {b'logical_type': b'image'}
+                fields.append(pa.field(key, pa.binary(), metadata=meta))
+            elif isinstance(value, np.ndarray):
+                meta = {b'logical_type': b'numpy'}
+                fields.append(pa.field(key, pa.binary(), metadata=meta))
+            elif isinstance(value, str):
+                fields.append(pa.field(key, pa.string()))
+            elif isinstance(value, (int, float, bool)):
+                # Use pyarrow's numpy integration for primitive types
+                pa_type = pa.from_numpy_dtype(np.dtype(type(value)))
+                fields.append(pa.field(key, pa_type))
+            elif isinstance(value, (list, tuple, dict)):
+                # Serialize complex types to JSON strings
+                meta = {b'logical_type': b'json'}
+                fields.append(pa.field(key, pa.string(), metadata=meta))
+            else:
+                raise TypeError(f"Unsupported data type for key '{key}': {type(value)}")
+        self.schema = pa.schema(fields)
+
     def add_entry(self, data_dict: dict):
         """Add an entry to the dataset.
 
         This method appends a data dictionary to the dataset. If the number of entries in the dataset
         reaches the specified limit, the data is saved to a file.
+        
+        It automatically serializes complex types like PIL.Image and np.ndarray.
 
         Parameters
         ----------
@@ -253,26 +238,58 @@ class DataToParquet():
         -------
         None
         """
-        self.data.append(data_dict)
+        if self.schema is None:
+            self._create_schema(data_dict)
         
-        if len(self.data) >= self.entry_per_file :
+        processed_entry = {}
+        for key, value in data_dict.items():
+            if isinstance(value, PILImage):
+                # Serialize PIL Image to bytes (e.g., PNG format)
+                buf = io.BytesIO()
+                value.save(buf, format='PNG')
+                processed_entry[key] = buf.getvalue()
+            elif isinstance(value, np.ndarray):
+                # Serialize NumPy array to bytes using numpy's save function
+                buf = io.BytesIO()
+                np.save(buf, value, allow_pickle=False) # allow_pickle=False for security
+                processed_entry[key] = buf.getvalue()
+            elif isinstance(value, (list, tuple, dict)):
+                processed_entry[key] = json.dumps(value)
+            else:
+                processed_entry[key] = value
+
+        self.data.append(processed_entry)
+        
+        if len(self.data) >= self.entry_per_file:
             self.save_data()
             
     def save_data(self):
         """
         Save the data to a parquet file. It is recommended to call this method after adding all the data.
         """
-        if len(self.data) == 0:
+        if len(self.data) == 0 or self.schema is None:
             return
         # Convert the data to a pandas dataframe
-        df = pd.DataFrame(self.data[:self.entry_per_file ])
-        _ = pa.Table.from_pandas(df)        
+        df = pd.DataFrame(self.data)
+        try:
+            table = pa.Table.from_pandas(df, schema=self.schema, preserve_index=False)
+        except pa.ArrowInvalid as e:
+            logger.error(f"Error converting to Arrow Table: {e}")
+            logger.error(f"Schema: {self.schema}")
+            logger.error(f"Data sample: {df.head(1).to_dict()}")
+            raise
         
         # Save the dataframe to parquet
         path = self.root_dir / self.dataset_info["name"] / self.dataset_info["scenes"][0]
-        pq.write_to_dataset(table=pa.Table.from_pandas(df),
-                            root_path=path,
+        pq.write_to_dataset(table=table,
+                            root_path=str(path),
                             schema=self.schema,
+                            use_threads=True,
+                            compression='zstd',
+                            # For datasets with large items like images, a smaller row group size
+                            # improves random access performance and reduces memory usage per read.
+                            row_group_size=self.row_group_size
         )
         
-        self.data = self.data[self.entry_per_file :]
+        # Clear the data buffer after saving
+        self.data = []

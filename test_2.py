@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 
 from swiftloader import FolderDataset, ParquetDataset
 from swiftloader import loaders
-from swiftloader.util import DatasetToCoco, DatasetToYolo
+from swiftloader.util import DatasetToCoco, DatasetToYolo, MaskRLE
 from swiftloader.util.display import draw_bounding_boxes
 
 def collate_fn(batch):
@@ -20,11 +20,12 @@ if __name__ == "__main__":
     
     dataset = FolderDataset(
         root_dir="/home/jure/datasets/folder_datasets",
-        datasets_info=[{"name": "TIM_1_Zaliti", "scenes": ["TIM_1_Zaliti_scene_4"]}], # "test", "test1", "test2", "SM_train_real", "SM_val_real"
+        datasets_info=[{"name": "TIM_1", "scenes": ["scene_2_annotated"]}], # "test", "test1", "test2", "SM_train_real", "SM_val_real"
         dataset_schema = [
                 {"field": "image", "dtype": ".jpg", "loader": loaders.ImageLoader()},
                 {"field": "image_annotation", "dtype": ".json", "loader": loaders.JsonLoader()},
                 {"field": "annotations", "dtype": ".json", "loader": loaders.JsonLoader()},
+                {"field": "mask_full", "dtype": "numpy", "loader": loaders.NumpyLoader()},
                 {"field": "mask_vis", "dtype": "numpy", "loader": loaders.NumpyLoader()},
             ],
     )
@@ -33,18 +34,18 @@ if __name__ == "__main__":
     
     for data in dataset:
         
-        annotations = data["annotations"]
         dataset_idx = data["dataset_idx"]
+        mask_vis = data["mask_vis"]
+        mask_full = data["mask_full"]
+
+        mask_vis_rle = MaskRLE(masks=mask_vis)
+        mask_full_rle = MaskRLE(masks=mask_full)
         
-        
-        new_annotations = []
-        
-        for i, annotation in enumerate(annotations):
-            annotation["mask_idx"] = i
-            new_annotations.append(annotation)
+        print(mask_vis_rle.to_dict())
             
         dataset.modify_entry(
             idx = dataset_idx,
             data_dict={
-                "annotations": new_annotations}
+                "mask_vis_rle": mask_vis_rle,
+                "mask_full_rle": mask_full_rle,}
         )

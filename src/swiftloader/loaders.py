@@ -10,6 +10,8 @@ import torch
 import torchvision
 import io
 
+from swiftloader.util.misc import MaskRLE
+
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
@@ -107,5 +109,57 @@ class NumpyLoader():
                 return arr
             else:
                 return np.load(str(data)+self._extension)
+
+
+class RLELoader:
+    """
+    Loader for RLE (Run-Length Encoded) masks.
+    """
+    
+    def __init__(self, 
+                 parquet: bool = False,
+                 output_format: Literal["rle", "numpy"] = "numpy"):
+        """
+        Initialize RLE loader.
+        
+        Parameters
+        ----------
+        parquet : bool, optional
+            Whether data comes from parquet format, by default False
+        output_format : Literal["rle", "numpy"], optional
+            Output format - "rle" returns MaskRLE object, "numpy" returns decoded masks, by default "numpy"
+        """
+        self.parquet = parquet
+        self.output_format = output_format
+        self._extension = ".rle.json"
+    
+    def __call__(self, data) -> Any:
+        """
+        Load RLE data.
+        
+        Parameters
+        ----------
+        data : str | Path | bytes
+            Path to RLE file or bytes data from parquet
+            
+        Returns
+        -------
+        MaskRLE | np.ndarray
+            Depending on output_format, returns either MaskRLE object or decoded numpy masks
+        """
+        if self.parquet:
+            # Load from bytes (parquet format)
+            rle_dict = json.loads(data)
+        else:
+            # Load from file
+            with open(str(data) + self._extension, "r") as f:
+                rle_dict = json.load(f)
+        
+        mask_rle = MaskRLE.from_dict(rle_dict)
+        
+        if self.output_format == "rle":
+            return mask_rle
+        else:  # numpy
+            return mask_rle.decode_masks()
 
 

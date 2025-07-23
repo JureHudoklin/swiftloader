@@ -2,26 +2,26 @@ import matplotlib.pyplot as plt
 import torch
 from functools import partial, reduce
 from tqdm import tqdm
+import numpy as np
+import time
 
 import torchvision.transforms.v2 as T
 from torch.utils.data import DataLoader
 
 from swiftloader import FolderDataset, ParquetDataset
-from swiftloader.task.object_detection import ObjectDetectionDatasetParquet
 from swiftloader import loaders
-from swiftloader.util import DatasetToCoco
 from swiftloader.util.display import draw_bounding_boxes
 
 if __name__ == "__main__":
     
     # Dataset setup
-    root_dir = "/media/jure/ssd/datasets/parquet_datasets"
-    dataset_name = "industrial_objects"
-    scenes = ["train_v3"]
+    root_dir = "/home/jure/datasets/parquet_datasets"
+    dataset_name = "objects365"
+    scenes = ["val"]
     dataset_schema = [
-                {"field": "image", "dtype": "binary", "loader": loaders.image_loader},
-                {"field": "image_annotation", "dtype": "string", "loader": loaders.json_loader},
-                {"field": "annotations", "dtype": "string", "loader": loaders.json_loader},
+                {"field": "image", "dtype": "binary", "loader": loaders.ImageLoader},
+                {"field": "image_annotation", "dtype": "string", "loader": loaders.JsonLoader},
+                {"field": "annotations", "dtype": "string", "loader": loaders.JsonLoader},
             ]
     
     
@@ -48,18 +48,35 @@ if __name__ == "__main__":
     dataset = ParquetDataset(
         root_dir=root_dir,
         datasets_info=[{"name": dataset_name, "scenes": scenes}],
-        dataset_schema = dataset_schema,
+        format_data=lambda x: {
+            "image": np.array(x["image"]),
+            "annotations": x["annotations"],
+            "dataset_idx": x["dataset_idx"],
+        },
+    )
+    
+    dataloder = DataLoader(
+        dataset,
         batch_size=1,
-        drop_last=False,
-        shuffle=True,
+        num_workers=8,
+        collate_fn=lambda x: x,
+        shuffle=False,
+        prefetch_factor=4,
     )
 
     # Load and display
-    for data in dataset:
+    iterator = iter(dataloder)
+    start_time = time.time()
+    for _ in tqdm(range(len(dataloder))):
+        data = next(iterator)[0]
         image = data["image"]
+        annotations = data["annotations"]
                 
-        plt.imshow(image)
-        plt.show()
+        if data["dataset_idx"] > 12000:
+            break
+        
+    print(f"Time taken: {time.time() - start_time:.2f} seconds")
+        
 
 
     
