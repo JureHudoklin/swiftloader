@@ -111,7 +111,6 @@ class DatasetToYolo:
                 with open(self.dataset_path / split / "labels" / f"image_{image_id}.txt", "w") as f:
                     for ann in annotations:
                         category_id = ann["category_id"]
-                        category_id = 0 
                         categories.add(category_id)
                         
                         bbox = ann["bbox"]
