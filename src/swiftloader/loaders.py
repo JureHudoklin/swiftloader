@@ -118,7 +118,7 @@ class RLELoader:
     
     def __init__(self, 
                  parquet: bool = False,
-                 output_format: Literal["rle", "numpy"] = "numpy"):
+                 output_format: Literal["rle", "numpy"] = "rle"):
         """
         Initialize RLE loader.
         
@@ -127,7 +127,7 @@ class RLELoader:
         parquet : bool, optional
             Whether data comes from parquet format, by default False
         output_format : Literal["rle", "numpy"], optional
-            Output format - "rle" returns MaskRLE object, "numpy" returns decoded masks, by default "numpy"
+            Output format - "rle" returns MaskRLE object, "numpy" returns decoded masks, by default "rle"
         """
         self.parquet = parquet
         self.output_format = output_format

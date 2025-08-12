@@ -13,14 +13,18 @@ class DatasetToCoco:
                  dataset,
                  save_dir: str | Path,
                  dataset_name: str,
-                 split_ratio: Tuple[float, float, float]  = (0.7, 0.2, 0.1)
+                 split_ratio: Tuple[float, float, float]  = (0.7, 0.2, 0.1),
+                 annotations_folder: bool = True,
+                 annotations_naming: str = "annotations_<split>.json"
     ):
         
         self.dataset = dataset
         self.save_dir = Path(save_dir)
         self.dataset_name = dataset_name
         self.split_ratio = split_ratio
-        
+        self.annotations_folder = annotations_folder
+        self.annotations_naming = annotations_naming
+
         self.dataset_path = self.save_dir / self.dataset_name
         
         self._create_dir_structure()
@@ -30,7 +34,11 @@ class DatasetToCoco:
             raise FileExistsError(f"Dataset {self.dataset_name} already exists in {self.save_dir}")
         
         self.dataset_path.mkdir(parents=True, exist_ok=True)
-        (self.dataset_path / "annotations").mkdir(parents=True, exist_ok=True)       
+        
+        # Only create annotations folder if annotations_folder is True
+        if self.annotations_folder:
+            (self.dataset_path / "annotations").mkdir(parents=True, exist_ok=True)       
+        
         (self.dataset_path / "images").mkdir(parents=True, exist_ok=True)
         
         (self.dataset_path / "images" / "train").mkdir(parents=True, exist_ok=True)
@@ -48,6 +56,7 @@ class DatasetToCoco:
         
         The function formats the dataset into COCO format and saves it in the specified directory.
         
+        If annotations_folder=True (default):
         dataset/
             ├── images/
             │   ├── train/
@@ -59,9 +68,23 @@ class DatasetToCoco:
             │   │   ├── image2.jpg
             │   │   └── ...
             └── annotations/
-                ├── instances_train.json
-                ├── instances_val.json
+                ├── annotations_train.json
+                ├── annotations_val.json
                 └── ...
+        
+        If annotations_folder=False:
+        dataset/
+            └── images/
+                ├── train/
+                │   ├── image1.jpg
+                │   ├── image2.jpg
+                │   ├── annotations_train.json
+                │   └── ...
+                ├── val/
+                │   ├── image1.jpg
+                │   ├── image2.jpg
+                │   ├── annotations_val.json
+                │   └── ...
         """ 
         coco_format = {
             "images": [],
@@ -175,10 +198,29 @@ class DatasetToCoco:
                 new_path = self.dataset_path / "images" / split / img["file_name"]
                 new_path.parent.mkdir(parents=True, exist_ok=True)
                 old_path.rename(new_path)
-                img["file_name"] = str(new_path.relative_to(self.dataset_path / "images"))
+                
+                # Update file_name based on annotations_folder setting
+                if self.annotations_folder:
+                    # If annotations are in separate folder, use relative path from images root
+                    img["file_name"] = str(new_path.relative_to(self.dataset_path / "images"))
+                else:
+                    # If annotations are in same folder as images, use just the filename
+                    img["file_name"] = new_path.name
 
-            # Save JSON
-            json_path = self.dataset_path / "annotations" / f"instances_{split}.json"
+            # Generate annotation filename using the naming template
+            annotation_filename = self.annotations_naming.replace("<split>", split)
+            
+            # Determine where to save the JSON file
+            if self.annotations_folder:
+                # Save in separate annotations folder
+                json_path = self.dataset_path / "annotations" / annotation_filename
+            else:
+                # Save in the same folder as the images for this split
+                json_path = self.dataset_path / "images" / split / annotation_filename
+            
+            # Ensure the directory exists
+            json_path.parent.mkdir(parents=True, exist_ok=True)
+            
             with open(json_path, 'w') as f:
                 json.dump(split_coco, f, indent=2)
 
