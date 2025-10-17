@@ -114,17 +114,21 @@ class DatasetToYolo:
                         categories.add(category_id)
                         
                         bbox = ann["bbox"]
-                        x, y, w, h = bbox
-                        x_center = x + w / 2
-                        y_center = y + h / 2
+                        if len(bbox) == 4:
+                            x, y, w, h = bbox
+                            x_center = x + w / 2
+                            y_center = y + h / 2
+                            
+                            bbox = [x_center, y_center, w, h]
+                            
+                        for i, coordinate in enumerate(bbox):
+                            if i % 2 == 0:  # x coordinate
+                                coordinate = coordinate/image.width
+                            else:  # y coordinate
+                                coordinate = coordinate/image.height
+                            bbox[i] = coordinate
                         
-                        # Normalize the coordinates
-                        x_center /= image.width
-                        y_center /= image.height
-                        w /= image.width
-                        h /= image.height
-                        
-                        f.write(f"{category_id} {x_center} {y_center} {w} {h}\n")
+                        f.write(f"{category_id} {' '.join(map(str, bbox))}\n")
         
                         annotation_id += 1
                         
